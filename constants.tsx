@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const SunIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -44,7 +45,7 @@ export const StoreIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 export const SettingsIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-1.007 1.11-1.226.554-.22 1.157-.14 1.666.231.51.372.835.956.835 1.591v.634a2.25 2.25 0 01-1.5 2.122l-1.56.624a2.25 2.25 0 00-1.5 2.122v.634a2.25 2.25 0 00.835 1.591.901.901 0 001.666.231 2.25 2.25 0 001.11-1.226c.09-.542.56-1.007 1.11-1.226.554-.22 1.157-.14 1.666.231.51.372.835.956.835 1.591v.634a2.25 2.25 0 01-1.5 2.122l-1.56.624a2.25 2.25 0 00-1.5 2.122v.634a2.25 2.25 0 00.835 1.591.901.901 0 001.666.231 2.25 2.25 0 001.11-1.226c.09-.542.56-1.007 1.11-1.226.554-.22 1.157-.14 1.666.231.51.372.835.956.835 1.591v.634a2.25 2.25 0 01-1.5 2.122l-1.56.624a2.25 2.25 0 00-1.5 2.122v.634a2.25 2.25 0 00.835 1.591.901.901 0 001.666.231 2.25 2.25 0 001.11-1.226" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-1.007 1.11-1.226.554-.22 1.157-.14 1.666.231.51.372.835.956.835 1.591v.634a2.25 2.25 0 01-1.5 2.122l-1.56.624a2.25 2.25 0 00-1.5 2.122v.634a2.25 2.25 0 00.835 1.591.901.901 0 001.666.231 2.25 2.25 0 001.11-1.226c.09-.542.56-1.007 1.11-1.226.554-.22 1.157-.14 1.666.231.51.372.835.956.835 1.591v.634a2.25 2.25 0 01-1.5 2.122l-1.56.624a2.25 2.25 0 00-1.5 2.122v.634a2.25 2.25 0 00.835 1.591.901.901 0 001.666.231 2.25 2.25 0 001.11-1.226" />
     </svg>
 );
 
@@ -126,7 +127,6 @@ export const ChartBarIcon = (props: React.SVGProps<SVGSVGElement>) => (
     </svg>
 );
 
-// FIX: Add missing DownloadIcon component
 export const DownloadIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -176,6 +176,12 @@ export const QuestionMarkCircleIcon = (props: React.SVGProps<SVGSVGElement>) => 
     </svg>
 );
 
+export const ExclamationTriangleIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+    </svg>
+);
+
 
 // FIX: Add missing LOGO_ICON_LIST export
 export const LOGO_ICON_LIST = {
@@ -208,4 +214,5 @@ export const LOGO_ICON_LIST = {
     CloudRainIcon,
     ArchiveBoxIcon,
     QuestionMarkCircleIcon,
+    ExclamationTriangleIcon,
 };

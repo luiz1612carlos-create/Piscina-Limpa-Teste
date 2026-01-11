@@ -16,8 +16,9 @@ export type ReplenishmentQuoteStatus = 'suggested' | 'sent' | 'approved' | 'reje
 export type AdvancePaymentRequestStatus = 'pending' | 'approved' | 'rejected';
 export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
+export type EmergencyStatus = 'pending' | 'resolved';
 
-export type AdminView = 'reports' | 'approvals' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings';
+export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings';
 
 export interface Address {
     street: string;
@@ -83,6 +84,17 @@ export interface ScheduledPlanChange {
     newPrice: number;
     fidelityPlan?: FidelityPlan;
     effectiveDate?: any;
+}
+
+export interface EmergencyRequest {
+    id: string;
+    clientId: string;
+    clientName: string;
+    clientPhone: string;
+    address: string;
+    reason: string;
+    status: EmergencyStatus;
+    createdAt: any;
 }
 
 export interface Client {
@@ -265,9 +277,11 @@ export interface Settings {
     pixKeyRecipient?: string;
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
+    priceReadjustmentMessageTemplate?: string;
     termsUpdatedAt?: any;
     pricing: {
         perKm: number;
+        serviceRadius: number;
         wellWaterFee: number;
         productsFee: number;
         partyPoolFee: number;
@@ -357,6 +371,7 @@ export interface AppData {
     advancePaymentRequests: AdvancePaymentRequest[];
     planChangeRequests: PlanChangeRequest[];
     poolEvents: PoolEvent[];
+    emergencyRequests: EmergencyRequest[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
     loading: {
@@ -375,6 +390,7 @@ export interface AppData {
         pendingPriceChanges: boolean;
         poolEvents: boolean;
         planChangeRequests: boolean;
+        emergencyRequests: boolean;
     };
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;
@@ -400,7 +416,7 @@ export interface AppData {
     deleteBank: (bankId: string) => Promise<void>;
     updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
     updateSettings: (newSettings: Partial<Settings>, logoFile?: File, removeLogo?: boolean, onProgress?: (progress: number) => void) => Promise<void>;
-    schedulePriceChange: (newPricing: PricingSettings, affectedClients: AffectedClientPreview[]) => Promise<void>;
+    schedulePriceChange: (newPricing: PricingSettings, affectedClients: AffectedClientPreview[], effectiveDate: Date) => Promise<void>;
     createBudgetQuote: (budget: Omit<BudgetQuote, 'id' | 'status' | 'createdAt'>) => Promise<void>;
     createOrder: (order: Omit<Order, 'id' | 'createdAt'>) => Promise<void>;
     getClientData: () => Promise<Client | null>;
@@ -424,4 +440,6 @@ export interface AppData {
     cancelPlanChangeRequest: (requestId: string) => Promise<void>;
     cancelScheduledPlanChange: (clientId: string) => Promise<void>;
     acknowledgeTerms: (clientId: string) => Promise<void>;
+    createEmergencyRequest: (data: Omit<EmergencyRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>;
+    resolveEmergencyRequest: (requestId: string) => Promise<void>;
 }

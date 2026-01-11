@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Select } from '../../components/Select';
-import { AppContextType, PlanType, Settings, FidelityPlan, BudgetQuote, Client } from '../../types';
+import { AppContextType, PlanType, Settings, FidelityPlan, BudgetQuote, Client, Address } from '../../types';
 import { Spinner } from '../../components/Spinner';
 import { normalizeDimension, calculateDrivingDistance, calculateClientMonthlyFee } from '../../utils/calculations';
 import BudgetSuccessView from './BudgetSuccessView';
@@ -135,7 +135,7 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
     const isFormComplete = useMemo(() => {
         const requiredFields: (keyof typeof formData)[] = [
             'name', 'email', 'phone', 
-            'street', 'number', 'neighborhood', 'city', 'state', 'zip'
+            'street', 'number', 'neighborhood', 'city', 'state'
         ];
         return requiredFields.every(field => formData[field] && formData[field].trim() !== '') && 
                selectedTierIndex !== '' && 
@@ -197,32 +197,23 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
 
     const handleCalculateDistance = async () => {
         if (!settings) return;
-        const { street, number, neighborhood, city, state } = formData;
-        if (!street || !neighborhood || !city || !state) {
-            showNotification('Preencha os campos de endereço antes de validar.', 'error');
+        const { street, number, neighborhood, city, state, zip } = formData;
+        if (!street || !number || !city || !state) {
+            showNotification('Preencha ao menos Rua, Número, Cidade e Estado.', 'error');
             return;
         }
 
         setIsCalculatingDistance(true);
         try {
-            // Formatação mais robusta para geocodificação (separada por vírgulas)
-            const origin = `${settings.baseAddress.street}, ${settings.baseAddress.number}, ${settings.baseAddress.neighborhood}, ${settings.baseAddress.city}, ${settings.baseAddress.state}, Brasil`;
-            const destination = `${street}, ${number}, ${neighborhood}, ${city}, ${state}, Brasil`;
-            
-            const km = await calculateDrivingDistance(origin, destination);
+            const km = await calculateDrivingDistance(settings.baseAddress, {
+                street, number, neighborhood, city, state, zip
+            });
 
-            if (km >= 0) {
-                setDistanceFromHq(km);
-                showNotification(`Endereço validado! Distância: ${km} km.`, 'success');
-            } else {
-                throw new Error("Distância inválida.");
-            }
+            setDistanceFromHq(km);
+            showNotification(`Localização validada! Distância: ${km} km.`, 'success');
         } catch (error: any) {
             console.error(error);
-            const msg = error.message.includes("origem") 
-                ? "Erro: O endereço base da empresa não foi configurado corretamente pelo administrador."
-                : error.message || "Erro ao validar endereço.";
-            showNotification(msg, 'error');
+            showNotification(error.message || "Erro ao localizar endereço. Tente remover complementos ou abreviações.", 'error');
         } finally {
             setIsCalculatingDistance(false);
         }
@@ -322,11 +313,11 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                     <legend className="px-2 font-semibold text-gray-700 dark:text-gray-300">2. Opções Adicionais</legend>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2 items-center">
                         <div className="space-y-2">
-                            <label className="flex items-center gap-3">
+                            <label className="flex items-center gap-3 text-gray-700 dark:text-gray-300">
                                 <input type="checkbox" name="hasWellWater" checked={options.hasWellWater} onChange={handleCheckboxChange} className="h-4 w-4 rounded border-gray-300 text-primary-600" />
                                 Água de poço
                             </label>
-                            <label className="flex items-center gap-3">
+                            <label className="flex items-center gap-3 text-gray-700 dark:text-gray-300">
                                 <input type="checkbox" name="isPartyPool" checked={options.isPartyPool} onChange={handleCheckboxChange} className="h-4 w-4 rounded border-gray-300 text-primary-600" />
                                 Piscina para eventos/festa?
                             </label>
@@ -398,19 +389,22 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                 <fieldset data-tour-id="address-section" className="border p-4 rounded-md dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
                     <legend className="px-2 font-semibold text-gray-700 dark:text-gray-300">5. Endereço e Validação</legend>
                     <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 mt-2">
-                        <Input containerClassName="sm:col-span-2" label="CEP" name="zip" value={formData.zip} onChange={handleInputChange} required maxLength={9} />
-                        <Input containerClassName="sm:col-span-4" label="Rua" name="street" value={formData.street} onChange={handleInputChange} required />
+                        <Input containerClassName="sm:col-span-2" label="CEP" name="zip" value={formData.zip} onChange={handleInputChange} maxLength={9} placeholder="Opcional" />
+                        <Input containerClassName="sm:col-span-4" label="Rua" name="street" value={formData.street} onChange={handleInputChange} required placeholder="Ex: Rua das Flores" />
                         <Input containerClassName="sm:col-span-2" label="Número" name="number" value={formData.number} onChange={handleInputChange} required />
                         <Input containerClassName="sm:col-span-4" label="Bairro" name="neighborhood" value={formData.neighborhood} onChange={handleInputChange} required />
                         <Input containerClassName="sm:col-span-4" label="Cidade" name="city" value={formData.city} onChange={handleInputChange} required />
-                        <Input containerClassName="sm:col-span-2" label="UF" name="state" value={formData.state} onChange={handleInputChange} required maxLength={2} />
+                        <Input containerClassName="sm:col-span-2" label="UF" name="state" value={formData.state} onChange={handleInputChange} required maxLength={2} placeholder="Ex: MG" />
                     </div>
                     
                     <div className="mt-4 flex flex-col items-center">
-                        <Button type="button" onClick={handleCalculateDistance} isLoading={isCalculatingDistance} disabled={!formData.street || !formData.city || distanceFromHq !== null} variant={distanceFromHq !== null ? 'secondary' : 'primary'}>
+                        <Button type="button" onClick={handleCalculateDistance} isLoading={isCalculatingDistance} disabled={!formData.street || !formData.number || !formData.city || distanceFromHq !== null} variant={distanceFromHq !== null ? 'secondary' : 'primary'}>
                             <SparklesIcon className="w-5 h-5 mr-2" />
-                            {distanceFromHq !== null ? 'Endereço Validado ✓' : 'Validar Endereço'}
+                            {distanceFromHq !== null ? 'Localização Validada ✓' : 'Validar Endereço'}
                         </Button>
+                        {distanceFromHq === null && (
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2 text-center uppercase tracking-wide">É obrigatório validar o endereço para ver o valor da mensalidade.</p>
+                        )}
                     </div>
                 </fieldset>
                 
@@ -418,11 +412,11 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                     <div data-tour-id="final-value" className="text-center p-4 bg-primary-50 dark:bg-primary-900/50 rounded-lg animate-fade-in border-2 border-primary-200">
                         <p className="text-lg font-medium text-gray-700 dark:text-gray-300">Valor Mensal Estimado:</p>
                         <p className="text-4xl font-bold text-primary-600 dark:text-primary-400">R$ {monthlyFee.toFixed(2).replace('.', ',')}</p>
-                        <p className="text-sm text-gray-500 mt-1">Cálculo validado para {distanceFromHq} km.</p>
+                        <p className="text-sm text-gray-500 mt-1">Distância da base: {distanceFromHq} km.</p>
                     </div>
                 ) : selectedPlanIdentifier && (
                     <div className="text-center p-4 bg-gray-100 dark:bg-gray-800 rounded text-gray-500 italic">
-                        {!hasAgreedToTerms ? 'Aceite os termos para liberar o cálculo do valor.' : 'Preencha o endereço e valide para ver o valor.'}
+                        {!hasAgreedToTerms ? 'Aceite os termos para liberar o cálculo do valor.' : 'Preencha o endereço completo e valide a localização para ver o valor final.'}
                     </div>
                 )}
 
@@ -477,7 +471,7 @@ const PlanCard: React.FC<PlanCardProps> = ({ title, benefits, isSelected, onSele
     return (
         <div onClick={() => !disabled && onSelect()} className={`${baseClasses} ${isSelected ? selectedClasses : unselectedClasses} ${disabled ? disabledClasses : enabledClasses}`}>
             {isSelected && <div className="absolute top-2 right-2 bg-primary-500 text-white p-1 rounded-full"><CheckBadgeIcon className="w-4 h-4" /></div>}
-            <h4 className="text-xl font-bold text-center">{title}</h4>
+            <h4 className="text-xl font-bold text-center text-gray-800 dark:text-gray-100">{title}</h4>
             <ul className="mt-4 space-y-2 list-disc list-inside text-gray-600 dark:text-gray-300 text-sm">
                 {benefits.map((benefit, i) => <li key={i}>{benefit}</li>)}
             </ul>

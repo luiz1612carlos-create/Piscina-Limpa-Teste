@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { calculateClientMonthlyFee, calculateVolume, normalizeDimension, calculateDrivingDistance } from '../../utils/calculations';
+import { calculateClientMonthlyFee, calculateVolume, normalizeDimension, calculateDrivingDistance, formatAddressForGeocoding } from '../../utils/calculations';
 import { AppContextType, Client, ClientProduct, PlanType, ClientStatus, PoolUsageStatus, PaymentStatus, Product, Address, Settings, Bank, FidelityPlan, Visit, StockProduct } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -17,7 +17,7 @@ interface ClientsViewProps {
 
 const formatAddress = (address: Address) => {
     if (!address) return 'N/A';
-    return `${address.street}, ${address.number} - ${address.city}`;
+    return `${address.street}, ${address.number} - ${address.neighborhood}, ${address.city} - ${address.state}, ${address.zip}`;
 };
 
 const toDate = (timestamp: any): Date | null => {
@@ -363,15 +363,16 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
         if (!settings) return;
         setIsCalculatingDistance(true);
         try {
-            const origin = `${settings.baseAddress.street}, ${settings.baseAddress.number}, ${settings.baseAddress.city}`;
-            const destination = `${clientData.address.street}, ${clientData.address.number}, ${clientData.address.city}`;
-            const km = await calculateDrivingDistance(origin, destination);
+            const originStr = formatAddressForGeocoding(settings.baseAddress);
+            const destinationStr = formatAddressForGeocoding(clientData.address);
+            
+            const km = await calculateDrivingDistance(originStr, destinationStr);
             if (km >= 0) {
                 setClientData(prev => ({ ...prev, distanceFromHq: km }));
-                alert(`Distância: ${km} km`);
+                alert(`Distância atualizada: ${km} km`);
             }
         } catch (error: any) {
-            alert("Erro ao calcular distância.");
+            alert(error.message || "Erro ao localizar endereço.");
         } finally {
             setIsCalculatingDistance(false);
         }
@@ -379,7 +380,15 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
 
     const calculatedFee = useMemo(() => {
         if (!settings) return 0;
-        return calculateClientMonthlyFee(clientData, settings, settings.pricing);
+        const tempClient: Partial<Client> = {
+            ...clientData,
+            poolDimensions: {
+                width: normalizeDimension(clientData.poolDimensions.width),
+                length: normalizeDimension(clientData.poolDimensions.length),
+                depth: normalizeDimension(clientData.poolDimensions.depth),
+            }
+        };
+        return calculateClientMonthlyFee(tempClient, settings, settings.pricing);
     }, [clientData, settings]);
 
     const planOptions = useMemo(() => {
@@ -427,7 +436,7 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
                         <Input containerClassName="sm:col-span-4" label="Cidade" name="address.city" value={clientData.address.city} onChange={handleChange} />
                         <div className="sm:col-span-2 flex items-end gap-2">
                             <Input label="Distância (Km)" name="distanceFromHq" type="number" value={clientData.distanceFromHq || 0} onChange={handleChange} containerClassName="mb-0 flex-grow" />
-                            <Button type="button" onClick={handleAutoCalculateDistance} isLoading={isCalculatingDistance} variant="secondary" title="Mapa"><SparklesIcon className="w-5 h-5 text-purple-600" /></Button>
+                            <Button type="button" onClick={handleAutoCalculateDistance} isLoading={isCalculatingDistance} variant="secondary" title="Recalcular com Mapa"><SparklesIcon className="w-5 h-5 text-purple-600" /></Button>
                         </div>
                     </div>
                 </fieldset>
@@ -478,9 +487,6 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
                             Registrar Pagamento de Ciclo
                         </Button>
                     </div>
-                    {clientData.payment.status === 'Pago' && (
-                        <p className="text-xs text-center text-gray-500 mt-2">Dica: Para reverter o status, use o campo "Status de Pagamento" acima e salve as alterações.</p>
-                    )}
                 </fieldset>
                 
                 <ClientStockManager stock={clientData.stock} allStockProducts={stockProducts} onStockChange={(newStock) => setClientData(prev => ({...prev, stock: newStock}))} />

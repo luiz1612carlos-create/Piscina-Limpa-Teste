@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { AuthContextType, AppContextType, AdminView } from '../../types';
-import { MenuIcon, SunIcon, MoonIcon, LogoutIcon, UsersIcon, RouteIcon, CheckBadgeIcon, StoreIcon, SettingsIcon, ChartBarIcon, DownloadIcon, CalendarDaysIcon, ArchiveBoxIcon, SparklesIcon } from '../../constants';
+import { MenuIcon, SunIcon, MoonIcon, LogoutIcon, UsersIcon, RouteIcon, CheckBadgeIcon, StoreIcon, SettingsIcon, ChartBarIcon, DownloadIcon, CalendarDaysIcon, ArchiveBoxIcon, SparklesIcon, ExclamationTriangleIcon } from '../../constants';
 import { useTheme } from '../../hooks/useTheme';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import ClientsView from './ClientsView';
@@ -13,6 +13,7 @@ import ReportsView from './ReportsView';
 import AdvancePaymentsView from './AdvancePaymentsView';
 import StockProductsView from './StockProductsView';
 import EventsView from './EventsView';
+import EmergenciesView from './EmergenciesView';
 
 interface AdminLayoutProps {
     authContext: AuthContextType;
@@ -29,9 +30,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
     const pendingBudgetsCount = appContext.budgetQuotes.filter(b => b.status === 'pending').length;
     const pendingPlanRequestsCount = appContext.planChangeRequests.filter(r => r.status === 'pending').length;
     const totalApprovals = pendingBudgetsCount + pendingPlanRequestsCount;
+    const pendingEmergenciesCount = appContext.emergencyRequests.filter(e => e.status === 'pending').length;
 
     const menuItems = [
         { id: 'reports', label: 'Relatórios', icon: ChartBarIcon },
+        { id: 'emergencies', label: 'Emergências VIP', icon: ExclamationTriangleIcon, count: pendingEmergenciesCount },
         { id: 'approvals', label: 'Aprovações', icon: CheckBadgeIcon, count: totalApprovals },
         { id: 'advances', label: 'Adiantamentos', icon: CalendarDaysIcon, count: appContext.advancePaymentRequests.filter(r => r.status === 'pending').length },
         { id: 'events', label: 'Eventos', icon: SparklesIcon, count: appContext.poolEvents.filter(e => e.status === 'notified').length },
@@ -45,6 +48,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
     const renderView = () => {
         switch (currentView) {
             case 'reports': return <ReportsView appContext={appContext} />;
+            case 'emergencies': return <EmergenciesView appContext={appContext} />;
             case 'clients': return <ClientsView appContext={appContext} />;
             case 'routes': return <RoutesView appContext={appContext} />;
             case 'approvals': return <ApprovalsView appContext={appContext} />;
@@ -91,14 +95,14 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
                             key={item.id}
                             onClick={() => {
                                 setCurrentView(item.id as AdminView);
-                                setIsSidebarOpen(false); // Close sidebar on mobile after selection
+                                setIsSidebarOpen(false);
                             }}
                             className={`w-full flex items-center p-2 rounded-md transition-colors ${currentView === item.id ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                         >
-                            <item.icon className="w-6 h-6 mr-3" />
-                            <span>{item.label}</span>
+                            <item.icon className={`w-6 h-6 mr-3 ${item.id === 'emergencies' && item.count ? 'text-red-500 animate-bounce' : ''}`} />
+                            <span className={item.id === 'emergencies' && item.count ? 'font-black text-red-600 dark:text-red-400' : ''}>{item.label}</span>
                             {item.count !== undefined && item.count > 0 && (
-                                <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">{item.count}</span>
+                                <span className={`ml-auto text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center ${item.id === 'emergencies' ? 'bg-red-600' : 'bg-red-500'}`}>{item.count}</span>
                             )}
                         </button>
                     ))}
@@ -109,7 +113,6 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
 
     return (
         <div className="flex h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-            {/* Mobile Sidebar Overlay */}
             {isSidebarOpen && (
                 <div 
                     className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden" 
@@ -117,14 +120,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
                 ></div>
             )}
 
-            {/* Sidebar */}
             <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-white dark:bg-gray-800 shadow-md flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <SidebarContent />
             </aside>
 
-            {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Header */}
                 <header className="bg-white dark:bg-gray-800 shadow-sm p-4 flex justify-between md:justify-end items-center space-x-4">
                     <button className="p-2 rounded-full text-gray-500 dark:text-gray-400 md:hidden" onClick={() => setIsSidebarOpen(true)}>
                         <MenuIcon className="w-6 h-6" />
@@ -144,7 +144,6 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
                         </button>
                     </div>
                 </header>
-                {/* Content Area */}
                 <main className="flex-1 overflow-x-hidden overflow-y-auto p-6">
                     {renderView()}
                 </main>

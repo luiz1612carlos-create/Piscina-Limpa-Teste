@@ -1,18 +1,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+// FIX: Import GoogleGenAI from @google/genai as per guidelines
+import { GoogleGenAI } from "@google/genai";
 import { AppContextType, Routes, Settings } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
 import { Button } from '../../components/Button';
 import { WeatherCloudyIcon, WeatherSunnyIcon, SparklesIcon, CloudRainIcon } from '../../constants';
 import { Select } from '../../components/Select';
-
-// Define a classe globalmente para o TypeScript
-declare global {
-    interface Window {
-        GoogleGenAI: any;
-    }
-}
 
 interface RoutesViewProps {
     appContext: AppContextType;
@@ -183,13 +178,8 @@ const WeatherForecast: React.FC<{ settings: Settings | null }> = ({ settings }) 
                 setIsAnalyzing(true);
                 setAiAnalysis(''); // Clear previous analysis
                 try {
-                    // Check for the global GoogleGenAI object
-                    if (typeof window.GoogleGenAI === 'undefined') {
-                      throw new Error("A biblioteca de IA do Google ainda está carregando ou falhou. Tente recarregar a página.");
-                    }
-                    
-                    // Always use direct process.env.API_KEY when initializing client
-                    const ai = new window.GoogleGenAI({ apiKey: process.env.API_KEY });
+                    // FIX: Followed guidelines - Initialize client using process.env.API_KEY directly
+                    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
                     const prompt = `
                         Analise os seguintes dados meteorológicos para os próximos 5 dias em Governador Valadares e forneça um resumo e recomendações para o agendamento de serviços de limpeza de piscinas.
@@ -198,13 +188,13 @@ const WeatherForecast: React.FC<{ settings: Settings | null }> = ({ settings }) 
                         (WMO Weather interpretation codes: 0-1 sol, 2-3 parcialmente nublado, 45-48 neblina, 51-65 chuva, 80-82 chuva forte).
                     `;
 
-                    // FIX: Updated to gemini-3-flash-preview as per recommended text task guidelines
+                    // FIX: Updated to gemini-3-flash-preview as per task guidelines for simple text tasks
                     const response = await ai.models.generateContent({
                         model: 'gemini-3-flash-preview',
                         contents: prompt,
                     });
                     
-                    // FIX: Property access .text instead of .text()
+                    // FIX: Property access .text instead of deprecated .text()
                     const analysisText = response.text;
                     if (!analysisText) {
                         throw new Error("A IA retornou uma resposta vazia.");
@@ -213,7 +203,6 @@ const WeatherForecast: React.FC<{ settings: Settings | null }> = ({ settings }) 
 
                 } catch (e: any) {
                     console.error("Erro na análise da IA:", e);
-                    // Standard fallback message without exposing configuration logic
                     setAiAnalysis("Análise da IA temporariamente indisponível.");
                 } finally {
                     setIsAnalyzing(false);

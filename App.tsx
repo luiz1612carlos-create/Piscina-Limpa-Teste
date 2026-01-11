@@ -17,7 +17,7 @@ import { Button } from './components/Button';
 
 const App: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
-    const { user, userData, loading: authLoading, login, logout, changePassword } = useAuth();
+    const { user, userData, loading: authLoading, isAnonymous, login, logout, changePassword } = useAuth();
     const appData = useAppData(user, userData);
 
     const [notification, setNotification] = useState<{ message: string; type: NotificationType } | null>(null);
@@ -31,7 +31,7 @@ const App: React.FC = () => {
     const authContextValue = { user, userData, login, logout, changePassword, showNotification };
     const appContextValue = { ...appData, showNotification };
     
-    // Highest priority: check if setup is needed
+    // 1. Verificação de Setup Inicial (Admin existe?)
     if (appData.setupCheck === 'checking') {
         return <div className="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900"><Spinner size="lg" /></div>;
     }
@@ -45,8 +45,11 @@ const App: React.FC = () => {
         );
     }
 
-    // If setup is done, proceed with auth loading check
-    if (authLoading || (user && !userData)) {
+    // 2. Lógica de Carregamento de Autenticação
+    // FIX: Se o usuário for anônimo, não esperamos por userData (pois ele não existe para anônimos)
+    const isWaitingForUserData = user && !isAnonymous && !userData;
+    
+    if (authLoading || isWaitingForUserData) {
         return <div className="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900"><Spinner size="lg" /></div>;
     }
 
@@ -57,18 +60,12 @@ const App: React.FC = () => {
     );
 
     const renderContent = () => {
-        // Maintenance Mode Check for Clients
+        // Modo Manutenção
         if (userData?.role === 'client' && appData.settings?.features.maintenanceModeEnabled) {
-            
-            // If we are still fetching the client data to check permissions, show spinner
             if (appData.loading.clients) {
                 return <div className="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900"><Spinner size="lg" /></div>;
             }
-
-            // Get the current logged-in client object from the pre-fetched list
             const currentClient = appData.clients.find(c => c.uid === user.uid);
-            
-            // Only block if the client does NOT have explicit permission to access during maintenance
             if (!currentClient?.allowAccessInMaintenance) {
                 return (
                     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-center p-4 text-center">
@@ -92,6 +89,7 @@ const App: React.FC = () => {
             }
         }
 
+        // Layouts por Perfil
         if (userData?.role === 'admin') {
             return <AdminLayout authContext={authContextValue} appContext={appContextValue} />;
         }
@@ -102,6 +100,7 @@ const App: React.FC = () => {
             return <ClientLayout authContext={authContextValue} appContext={appContextValue} />;
         }
 
+        // Tela de Boas-vindas / Login / Orçamento (Visitantes)
         const logoTransforms = appData.settings?.logoTransforms;
         const logoFilter = [
             `brightness(${logoTransforms?.brightness || 1})`,

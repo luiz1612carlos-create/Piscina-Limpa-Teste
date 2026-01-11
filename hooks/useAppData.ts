@@ -1,11 +1,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import { db, firebase, auth, storage } from '../firebase';
+import { db, firebase, auth, storage, firebaseConfig } from '../firebase';
 import {
     Client, BudgetQuote, Routes, Product, Order, Settings, ClientProduct, UserData,
     OrderStatus, AppData, ReplenishmentQuote, ReplenishmentQuoteStatus, Bank, Transaction,
     AdvancePaymentRequest, AdvancePaymentRequestStatus, RouteDay, FidelityPlan, Visit, StockProduct,
-    PendingPriceChange, PricingSettings, AffectedClientPreview, PoolEvent, RecessPeriod, PlanChangeRequest, PlanType
+    PendingPriceChange, PricingSettings, AffectedClientPreview, PoolEvent, RecessPeriod, PlanChangeRequest, PlanType,
+    EmergencyRequest
 } from '../types';
 import { compressImage } from '../utils/calculations';
 
@@ -57,8 +58,10 @@ const defaultSettings: Settings = {
     pixKeyRecipient: "S.O.S Piscina Limpa",
     whatsappMessageTemplate: "Olá {CLIENTE}, tudo bem? Passando para lembrar sobre o vencimento da sua mensalidade no valor de R$ {VALOR} no dia {VENCIMENTO}. \n\nChave PIX: {PIX} \nDestinatário: {DESTINATARIO}\n\nAgradecemos a parceria!",
     announcementMessageTemplate: "Atenção! ⚠️\n\nInformamos que nessas datas nossos serviços não estarão disponíveis.\n(Envie a imagem do calendário/aviso após abrir o WhatsApp)\n\nAcesse sua conta do cliente pelo site: https://s-o-s-piscina-limpa.vercel.app/\n\nVá na opção 'Agendar Evento' e faça sua programação. Isso nos ajudará a nos organizar e entregar a qualidade necessária.\n\nAcesse sua conta cliente:\nLogin: {LOGIN}\nSenha: (sua senha de acesso)",
+    priceReadjustmentMessageTemplate: "Comunicado: Atualização de Preços\n\nInformamos que, para manter a qualidade de nossos serviços, sua mensalidade será reajustada para R$ {VALOR} a partir de {DATA}.",
     pricing: {
         perKm: 1.5,
+        serviceRadius: 5,
         wellWaterFee: 50,
         productsFee: 75,
         partyPoolFee: 100,
@@ -126,6 +129,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const [pendingPriceChanges, setPendingPriceChanges] = useState<PendingPriceChange[]>([]);
     const [poolEvents, setPoolEvents] = useState<PoolEvent[]>([]);
     const [planChangeRequests, setPlanChangeRequests] = useState<PlanChangeRequest[]>([]);
+    const [emergencyRequests, setEmergencyRequests] = useState<EmergencyRequest[]>([]);
     const [setupCheck, setSetupCheck] = useState<'checking' | 'needed' | 'done'>('checking');
     
     const [advancePlanUsage, setAdvancePlanUsage] = useState({ count: 0, percentage: 0 });
@@ -133,7 +137,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
 
 
     const [loading, setLoading] = useState({
-        clients: true, users: true, budgetQuotes: true, routes: true, products: true, stockProducts: true, orders: true, settings: true, replenishmentQuotes: true, banks: true, transactions: true, advancePaymentRequests: true, pendingPriceChanges: true, poolEvents: true, planChangeRequests: true
+        clients: true, users: true, budgetQuotes: true, routes: true, products: true, stockProducts: true, orders: true, settings: true, replenishmentQuotes: true, banks: true, transactions: true, advancePaymentRequests: true, pendingPriceChanges: true, poolEvents: true, planChangeRequests: true, emergencyRequests: true
     });
 
     const isUserAdmin = userData?.role === 'admin';
@@ -250,6 +254,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
                 try {
                     const batch = db.batch();
                     const settingsRef = db.collection('settings').doc('main');
+                    
                     const activeVips = clients.filter(c => c.clientStatus === 'Ativo' && c.plan === 'VIP');
                     
                     activeVips.forEach(vip => {
@@ -261,9 +266,10 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
 
                     batch.set(settingsRef, { pricing: change.newPricing }, { merge: true });
                     batch.update(db.collection('pendingPriceChanges').doc(change.id), { status: 'applied' });
+                    
                     await batch.commit();
                 } catch (error) {
-                    console.error(`Failed to apply price change ${change.id}:`, error);
+                    console.error(`Falha ao aplicar reajuste ${change.id}:`, error);
                 }
             }
         };
@@ -279,37 +285,37 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         const unsubUsers = db.collection('users').where('role', 'in', ['admin', 'technician']).onSnapshot(snapshot => {
             setUsers(snapshot.docs.map(doc => doc.data() as UserData));
             setLoadingState('users', false);
-        });
+        }, error => console.warn("Users listener error:", error));
         
         const unsubClients = db.collection('clients').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client)));
             setLoadingState('clients', false);
-        });
+        }, error => console.warn("Clients listener error:", error));
 
-        const unsubBudgets = db.collection('quotes').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        const unsubBudgets = db.collection('pre-budgets').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             setBudgetQuotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BudgetQuote)));
             setLoadingState('budgetQuotes', false);
-        });
+        }, error => console.warn("Budgets listener error:", error));
 
         const unsubRoutes = db.collection('routes').doc('main').onSnapshot(doc => {
             if (doc.exists) setRoutes(doc.data() as Routes);
             setLoadingState('routes', false);
-        });
+        }, error => console.warn("Routes listener error:", error));
 
         const unsubOrders = db.collection('orders').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
             setLoadingState('orders', false);
-        });
+        }, error => console.warn("Orders listener error:", error));
 
         const unsubQuotes = db.collection('replenishmentQuotes').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             setReplenishmentQuotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplenishmentQuote)));
             setLoadingState('replenishmentQuotes', false);
-        });
+        }, error => console.warn("Replenishment listener error:", error));
 
         const unsubBanks = db.collection('banks').onSnapshot(snapshot => {
             setBanks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bank)));
             setLoadingState('banks', false);
-        });
+        }, error => console.warn("Banks listener error:", error));
 
         const unsubTransactions = db.collection('transactions').onSnapshot(snapshot => {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
@@ -320,41 +326,46 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
             });
             setTransactions(data);
             setLoadingState('transactions', false);
-        });
+        }, error => console.warn("Transactions listener error:", error));
 
         const unsubAdvanceRequests = db.collection('advancePaymentRequests').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             setAdvancePaymentRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdvancePaymentRequest)));
             setLoadingState('advancePaymentRequests', false);
-        });
+        }, error => console.warn("AdvancePayment listener error:", error));
 
         const unsubStockProducts = db.collection('stockProducts').onSnapshot(snapshot => {
             setStockProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as StockProduct)));
             setLoadingState('stockProducts', false);
-        });
+        }, error => console.warn("StockProducts listener error:", error));
 
         const unsubPendingChanges = db.collection('pendingPriceChanges').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             setPendingPriceChanges(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PendingPriceChange)));
             setLoadingState('pendingPriceChanges', false);
-        });
+        }, error => console.warn("PendingChanges listener error:", error));
 
         const unsubEvents = db.collection('poolEvents').orderBy('eventDate', 'asc').onSnapshot(snapshot => {
             setPoolEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PoolEvent)));
             setLoadingState('poolEvents', false);
-        });
+        }, error => console.warn("Events listener error:", error));
 
         const unsubPlanChanges = db.collection('planChangeRequests').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
             setPlanChangeRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanChangeRequest)));
             setLoadingState('planChangeRequests', false);
-        });
+        }, error => console.warn("PlanChanges listener error:", error));
 
-        return () => { unsubUsers(); unsubClients(); unsubBudgets(); unsubRoutes(); unsubOrders(); unsubQuotes(); unsubBanks(); unsubTransactions(); unsubAdvanceRequests(); unsubStockProducts(); unsubPendingChanges(); unsubEvents(); unsubPlanChanges(); };
+        const unsubEmergencies = db.collection('emergencyRequests').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+            setEmergencyRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmergencyRequest)));
+            setLoadingState('emergencyRequests', false);
+        }, error => console.warn("Emergencies listener error:", error));
+
+        return () => { unsubUsers(); unsubClients(); unsubBudgets(); unsubRoutes(); unsubOrders(); unsubQuotes(); unsubBanks(); unsubTransactions(); unsubAdvanceRequests(); unsubStockProducts(); unsubPendingChanges(); unsubEvents(); unsubPlanChanges(); unsubEmergencies(); };
     }, [isUserAdmin, isUserTechnician]);
     
     useEffect(() => {
         const unsubProducts = db.collection('products').onSnapshot(snapshot => {
             setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
             setLoadingState('products', false);
-        });
+        }, error => console.warn("Products global listener error:", error));
 
         const unsubSettings = db.collection('settings').doc('main').onSnapshot(doc => {
             if (doc.exists) {
@@ -363,14 +374,9 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
                 setSettings(defaultSettings);
             }
             setLoadingState('settings', false);
-        });
+        }, error => console.warn("Settings global listener error:", error));
         
-        const unsubBanks = db.collection('banks').onSnapshot(snapshot => {
-            setBanks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bank)));
-            setLoadingState('banks', false);
-        });
-
-        return () => { unsubProducts(); unsubSettings(); unsubBanks(); };
+        return () => { unsubProducts(); unsubSettings(); };
     }, []);
 
     useEffect(() => {
@@ -379,39 +385,49 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         const unsubClient = db.collection('clients').where('uid', '==', user.uid).limit(1).onSnapshot(snapshot => {
             if (!snapshot.empty) setClients([{ id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Client]);
             setLoadingState('clients', false);
-        });
+        }, error => console.warn("Client self listener error:", error));
 
         const unsubOrders = db.collection('orders').where('clientId', 'in', [user.uid, user.id || '']).onSnapshot(snapshot => {
             setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
             setLoadingState('orders', false);
-        });
+        }, error => console.warn("Client orders listener error:", error));
 
         const unsubQuotes = db.collection('replenishmentQuotes').where('clientId', 'in', [user.uid, user.id || '']).onSnapshot(snapshot => {
             setReplenishmentQuotes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ReplenishmentQuote)));
             setLoadingState('replenishmentQuotes', false);
-        });
+        }, error => console.warn("Client quotes listener error:", error));
         
         const unsubAdvanceRequests = db.collection('advancePaymentRequests').where('clientId', 'in', [user.uid, user.id || '']).onSnapshot(snapshot => {
             setAdvancePaymentRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdvancePaymentRequest)));
             setLoadingState('advancePaymentRequests', false);
-        });
+        }, error => console.warn("Client advance requests listener error:", error));
 
         const unsubEvents = db.collection('poolEvents').where('clientId', 'in', [user.uid, user.id || '']).onSnapshot(snapshot => {
             setPoolEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PoolEvent)));
             setLoadingState('poolEvents', false);
-        });
+        }, error => console.warn("Client events listener error:", error));
         
         const unsubPendingChanges = db.collection('pendingPriceChanges').where('status', '==', 'pending').onSnapshot(snapshot => {
             setPendingPriceChanges(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PendingPriceChange)));
             setLoadingState('pendingPriceChanges', false);
-        });
+        }, error => console.warn("Client price changes listener error:", error));
             
         const unsubPlanChanges = db.collection('planChangeRequests').where('clientId', 'in', [user.uid, user.id || '']).onSnapshot(snapshot => {
             setPlanChangeRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PlanChangeRequest)));
             setLoadingState('planChangeRequests', false);
-        });
+        }, error => console.warn("Client plan changes listener error:", error));
 
-        return () => { unsubClient(); unsubOrders(); unsubQuotes(); unsubAdvanceRequests(); unsubEvents(); unsubPendingChanges(); unsubPlanChanges(); };
+        const unsubEmergencies = db.collection('emergencyRequests').where('clientId', '==', user.uid).onSnapshot(snapshot => {
+            setEmergencyRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EmergencyRequest)));
+            setLoadingState('emergencyRequests', false);
+        }, error => console.warn("Client emergencies listener error:", error));
+
+        const unsubBanks = db.collection('banks').onSnapshot(snapshot => {
+            setBanks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bank)));
+            setLoadingState('banks', false);
+        }, error => console.warn("Client banks listener error:", error));
+
+        return () => { unsubClient(); unsubOrders(); unsubQuotes(); unsubAdvanceRequests(); unsubEvents(); unsubPendingChanges(); unsubPlanChanges(); unsubEmergencies(); unsubBanks(); };
     }, [user, userData]);
 
     const createInitialAdmin = async (name: string, email: string, pass: string) => {
@@ -430,29 +446,62 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
 
 
     const approveBudgetQuote = async (budgetId: string, password: string, distanceFromHq?: number) => {
-        const budgetDoc = await db.collection('quotes').doc(budgetId).get();
+        const budgetDoc = await db.collection('pre-budgets').doc(budgetId).get();
         if (!budgetDoc.exists) throw new Error("Orçamento não encontrado.");
         const budget = budgetDoc.data() as BudgetQuote;
 
-        const userCredential = await auth.createUserWithEmailAndPassword(budget.email, password);
-        const newUid = userCredential.user.uid;
-        const batch = db.batch();
-        batch.set(db.collection('users').doc(newUid), { name: budget.name, email: budget.email, role: 'client', uid: newUid });
-        batch.set(db.collection('clients').doc(), {
-            uid: newUid, name: budget.name, email: budget.email, phone: budget.phone, address: budget.address,
-            poolDimensions: budget.poolDimensions, poolVolume: budget.poolVolume, hasWellWater: budget.hasWellWater,
-            includeProducts: false, isPartyPool: budget.isPartyPool, plan: budget.plan, clientStatus: 'Ativo',
-            poolStatus: { ph: 7.2, cloro: 1.5, alcalinidade: 100, uso: 'Livre para uso' },
-            payment: { status: 'Pendente', dueDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString() },
-            stock: [], pixKey: '', createdAt: firebase.firestore.FieldValue.serverTimestamp(), lastVisitDuration: 0,
-            distanceFromHq: distanceFromHq || budget.distanceFromHq || 0,
-            fidelityPlan: budget.fidelityPlan || null
-        });
-        batch.update(db.collection('quotes').doc(budgetId), { status: 'approved' });
-        await batch.commit();
+        // Criar UID amigável para debug se necessário, mas o Firebase gera o oficial.
+        const secondaryApp = firebase.initializeApp(firebaseConfig, `AppApproval_${Date.now()}`);
+        
+        try {
+            const userCredential = await secondaryApp.auth().createUserWithEmailAndPassword(budget.email, password);
+            const newUid = userCredential.user.uid;
+            
+            const batch = db.batch();
+            
+            // 1. Criar perfil de acesso
+            batch.set(db.collection('users').doc(newUid), { 
+                name: budget.name, 
+                email: budget.email, 
+                role: 'client', 
+                uid: newUid 
+            });
+            
+            // 2. Criar registro de cliente
+            const clientRef = db.collection('clients').doc();
+            batch.set(clientRef, {
+                uid: newUid, 
+                name: budget.name, 
+                email: budget.email, 
+                phone: budget.phone, 
+                address: budget.address,
+                poolDimensions: budget.poolDimensions, 
+                poolVolume: budget.poolVolume, 
+                hasWellWater: budget.hasWellWater,
+                includeProducts: false, 
+                isPartyPool: budget.isPartyPool, 
+                plan: budget.plan, 
+                clientStatus: 'Ativo',
+                poolStatus: { ph: 7.2, cloro: 1.5, alcalinidade: 100, uso: 'Livre para uso' },
+                payment: { status: 'Pendente', dueDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString() },
+                stock: [], pixKey: '', createdAt: firebase.firestore.FieldValue.serverTimestamp(), lastVisitDuration: 0,
+                distanceFromHq: distanceFromHq || budget.distanceFromHq || 0,
+                fidelityPlan: budget.fidelityPlan || null
+            });
+            
+            // 3. Atualizar orçamento
+            batch.update(db.collection('pre-budgets').doc(budgetId), { status: 'approved' });
+            
+            await batch.commit();
+        } catch (error: any) {
+            console.error("Erro na aprovação atômica:", error);
+            throw error;
+        } finally {
+            await secondaryApp.delete();
+        }
     };
     
-    const rejectBudgetQuote = (budgetId: string) => db.collection('quotes').doc(budgetId).delete();
+    const rejectBudgetQuote = (budgetId: string) => db.collection('pre-budgets').doc(budgetId).delete();
     const updateClient = (clientId: string, data: Partial<Client>) => db.collection('clients').doc(clientId).update(data);
     const deleteClient = (clientId: string) => db.collection('clients').doc(clientId).delete();
 
@@ -469,22 +518,14 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         
         const currentDueDate = new Date(client.payment.dueDate);
         const today = new Date();
-        today.setHours(12, 0, 0, 0); // Hora neutra para cálculos de data
+        today.setHours(12, 0, 0, 0); 
 
         const targetDay = currentDueDate.getDate();
 
-        // Calculamos a base: o maior entre Hoje ou a data do Vencimento Atual.
-        // Isso garante que se o cliente estiver muito atrasado, o sistema pule para o próximo ciclo futuro 
-        // mantendo o dia fixo do mês.
         let nextDate = new Date(Math.max(today.getTime(), currentDueDate.getTime()));
-        
-        // Avançamos o(s) mês(es) solicitado(s)
         nextDate.setMonth(nextDate.getMonth() + months);
-        
-        // Tentamos restaurar o dia fixo
         nextDate.setDate(targetDay);
         
-        // Correção para meses curtos (ex: 31 Jan -> 28 Fev)
         if (nextDate.getDate() !== targetDay) {
             nextDate.setDate(0); 
         }
@@ -584,16 +625,17 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         return db.collection('settings').doc('main').set(update, { merge: true });
     };
     
-    const schedulePriceChange = async (newPricing: PricingSettings, affectedClients: AffectedClientPreview[]) => {
-        const effectiveDate = new Date();
-        effectiveDate.setDate(effectiveDate.getDate() + 30);
+    const schedulePriceChange = async (newPricing: PricingSettings, affectedClients: AffectedClientPreview[], effectiveDate: Date) => {
         await db.collection('pendingPriceChanges').add({
             effectiveDate: firebase.firestore.Timestamp.fromDate(effectiveDate),
-            newPricing, affectedClients, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            newPricing,
+            affectedClients,
+            status: 'pending',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
     };
 
-    const createBudgetQuote = (budgetData: Omit<BudgetQuote, 'id' | 'status' | 'createdAt'>) => db.collection('quotes').add({ ...budgetData, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    const createBudgetQuote = (budgetData: Omit<BudgetQuote, 'id' | 'status' | 'createdAt'>) => db.collection('pre-budgets').add({ ...budgetData, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp() });
     const createOrder = (orderData: Omit<Order, 'id' | 'createdAt'>) => db.collection('orders').add({ ...orderData, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
     
     const getClientData = useCallback(async (): Promise<Client | null> => {
@@ -663,7 +705,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
 
     const resetReportsData = async () => {
         if (!window.confirm("Confirma o reset? Isso apagará orçamentos, pedidos e transações.")) return;
-        const cols = ['quotes', 'orders', 'replenishmentQuotes', 'transactions', 'advancePaymentRequests', 'planChangeRequests'];
+        const cols = ['pre-budgets', 'orders', 'replenishmentQuotes', 'transactions', 'advancePaymentRequests', 'planChangeRequests', 'emergencyRequests'];
         for (const c of cols) {
             const snap = await db.collection(c).get();
             const batch = db.batch();
@@ -717,8 +759,20 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
 
     const acknowledgeTerms = (clientId: string) => db.collection('clients').doc(clientId).update({ lastAcceptedTermsAt: firebase.firestore.FieldValue.serverTimestamp() });
 
+    const createEmergencyRequest = async (data: Omit<EmergencyRequest, 'id' | 'status' | 'createdAt'>) => {
+        await db.collection('emergencyRequests').add({
+            ...data,
+            status: 'pending',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    };
+
+    const resolveEmergencyRequest = async (requestId: string) => {
+        await db.collection('emergencyRequests').doc(requestId).update({ status: 'resolved' });
+    };
+
     return {
-        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, settings, replenishmentQuotes, advancePaymentRequests, pendingPriceChanges, poolEvents, planChangeRequests, loading,
+        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, settings, replenishmentQuotes, advancePaymentRequests, pendingPriceChanges, poolEvents, planChangeRequests, emergencyRequests, loading,
         setupCheck, createInitialAdmin, createTechnician,
         isAdvancePlanGloballyAvailable, advancePlanUsage,
         approveBudgetQuote, rejectBudgetQuote, updateClient, deleteClient, markAsPaid, updateClientStock,
@@ -726,6 +780,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         updateOrderStatus, updateSettings, schedulePriceChange, createBudgetQuote, createOrder, getClientData,
         updateReplenishmentQuoteStatus, triggerReplenishmentAnalysis, createAdvancePaymentRequest, approveAdvancePaymentRequest, rejectAdvancePaymentRequest,
         addVisitRecord, resetReportsData, createPoolEvent, acknowledgePoolEvent, deletePoolEvent, saveRecessPeriod, deleteRecessPeriod,
-        requestPlanChange, respondToPlanChangeRequest, acceptPlanChange, cancelPlanChangeRequest, cancelScheduledPlanChange, acknowledgeTerms
+        requestPlanChange, respondToPlanChangeRequest, acceptPlanChange, cancelPlanChangeRequest, cancelScheduledPlanChange, acknowledgeTerms,
+        createEmergencyRequest, resolveEmergencyRequest
     };
 };

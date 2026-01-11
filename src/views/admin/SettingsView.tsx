@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { AppContextType, AuthContextType, Settings, Bank, AdvancePaymentOption, FidelityPlan, UserData, AffectedClientPreview, PendingPriceChange, RecessPeriod, PricingSettings } from '../../types';
+import { AppContextType, AuthContextType, Settings, Bank, AdvancePaymentOption, FidelityPlan, UserData, AffectedClientPreview, PendingPriceChange, RecessPeriod } from '../../types';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Spinner } from '../../components/Spinner';
@@ -9,7 +9,7 @@ import { TrashIcon, EditIcon, PlusIcon, CalendarDaysIcon, ChartBarIcon, Currency
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { calculateClientMonthlyFee } from '../../utils/calculations';
-import { firebase, db } from '../../firebase';
+import { firebase } from '../../firebase';
 
 // This is a workaround for the no-build-tool environment
 declare const html2canvas: any;
@@ -487,12 +487,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
 
     useEffect(() => {
         if (settings) {
-            // Importante: Manter o estado local sincronizado com os dados do banco
             const initialSettings = JSON.parse(JSON.stringify(settings));
+            if (pendingChange) {
+                initialSettings.pricing = JSON.parse(JSON.stringify(pendingChange.newPricing));
+            }
             setLocalSettings(initialSettings);
             setLogoPreview(settings.logoUrl || null);
         }
-    }, [settings]);
+    }, [settings, pendingChange]);
 
     const impactAnalysis = useMemo(() => {
         if (!settings || !localSettings) return [];
@@ -649,15 +651,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
         setLocalSettings(prev => ({ ...prev!, logoUrl: undefined }));
     };
 
-    const handleResetTemplate = (fieldName: keyof Settings) => {
-        let defaultVal = "";
-        if (fieldName === 'whatsappMessageTemplate') {
-            defaultVal = "Olá {CLIENTE}, tudo bem? Passando para lembrar sobre o vencimento da sua mensalidade no valor de R$ {VALOR} no dia {VENCIMENTO}. \n\nChave PIX: {PIX} \nDestinatário: {DESTINATARIO}\n\nAgradecemos a parceria!";
-        } else if (fieldName === 'priceReadjustmentMessageTemplate') {
-            defaultVal = "Comunicado: Atualização de Preços\n\nInformamos que, para manter a qualidade de nossos serviços, sua mensalidade será reajustada para R$ {VALOR} a partir de {DATA}.";
-        }
-        
-        handleSimpleChange({ target: { name: fieldName, value: defaultVal } } as any);
+    const handleResetTemplate = () => {
+        const defaultTemplate = "Olá {CLIENTE}, tudo bem? Passando para lembrar sobre o vencimento da sua mensalidade no valor de R$ {VALOR} no dia {VENCIMENTO}. \n\nChave PIX: {PIX} \nDestinatário: {DESTINATARIO}\n\nAgradecemos a parceria!";
+        handleSimpleChange({ target: { name: 'whatsappMessageTemplate', value: defaultTemplate } } as any);
         showNotification('Modelo de mensagem restaurado para o padrão.', 'info');
     };
 
@@ -669,14 +665,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
             const hasPriceChanged = JSON.stringify(localSettings.pricing) !== JSON.stringify(settings.pricing);
             const hasPlansChanged = JSON.stringify(localSettings.plans) !== JSON.stringify(settings.plans);
 
-            // Importante: Criamos uma cópia para não alterar o localSettings enquanto processamos
-            const settingsToSave = JSON.parse(JSON.stringify(localSettings));
+            const settingsToSave = { ...localSettings };
             
             if (hasPlansChanged) {
                 settingsToSave.termsUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
             }
 
-            // Se o preço mudou, precisamos da confirmação do modal antes de salvar a parte de pricing
+            // If price changed, we need the modal decision before final save of pricing section
             if (hasPriceChanged) {
                 const affected = impactAnalysis.map(c => ({ id: c.id, name: c.name }));
                 setAffectedClientsPreview(affected);
@@ -685,7 +680,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                 return;
             }
 
-            // Se o preço NÃO mudou, salva as outras configurações normalmente
             await updateSettings(
                 settingsToSave, 
                 logoFile || undefined, 
@@ -705,36 +699,31 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
     };
 
     const handleConfirmPriceChange = async () => {
-        if (!localSettings || !settings) return;
+        if (!localSettings) return;
         
         setIsSaving(true);
         try {
             let effectiveDateObj: Date;
-            const newPricing = JSON.parse(JSON.stringify(localSettings.pricing));
             
-            // Outras configurações (identidade, funcionalidades, etc) devem ser salvas sempre
-            const otherSettings = JSON.parse(JSON.stringify(localSettings));
-
             if (priceEffectType === 'immediate') {
                 effectiveDateObj = new Date();
-                // Se for imediato, atualizamos o pricing global imediatamente
-                await updateSettings(otherSettings, logoFile || undefined, shouldRemoveLogo);
-                showNotification('Novos preços aplicados imediatamente!', 'success');
+                effectiveDateObj.setSeconds(effectiveDateObj.getSeconds() + 5);
             } else {
-                // Se for agendado, salvamos as outras configs mas MANTEMOS o pricing anterior no global
                 effectiveDateObj = new Date(customEffectiveDate + 'T12:00:00');
-                
-                // Removemos o campo pricing da atualização global para não sobrescrever o atual
-                delete otherSettings.pricing; 
-                
-                await updateSettings(otherSettings, logoFile || undefined, shouldRemoveLogo);
-                
-                // Registramos a mudança futura
-                await schedulePriceChange(newPricing, affectedClientsPreview, effectiveDateObj);
-                
-                showNotification(`Alteração de preço agendada para ${effectiveDateObj.toLocaleDateString('pt-BR')}`, 'success');
             }
 
+            await schedulePriceChange(localSettings.pricing, affectedClientsPreview, effectiveDateObj);
+            
+            // Also save non-pricing settings that might have changed
+            const otherSettings = { ...localSettings };
+            await updateSettings(otherSettings, logoFile || undefined, shouldRemoveLogo);
+
+            showNotification(
+                priceEffectType === 'immediate' 
+                    ? 'Novos preços aplicados imediatamente!' 
+                    : `Alteração de preço agendada para ${effectiveDateObj.toLocaleDateString('pt-BR')}`, 
+                'success'
+            );
             setIsPriceChangeModalOpen(false);
         } catch (error: any) {
              showNotification(error.message || 'Erro ao agendar alteração de preço.', 'error');
@@ -873,7 +862,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                                 />
                                             </div>
                                             <div>
-                                                <label className="block text-sm">Rotação: {localSettings.logoTransforms?.rotate || 0}°</label>
+                                                <label className="block text-sm">Rotação: {localSettings.logoTransforms?.rotate}°</label>
                                                 <input type="range" min="-180" max="180" step="1" name="rotate"
                                                     value={localSettings.logoTransforms?.rotate || 0}
                                                     onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
@@ -936,15 +925,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                 
                 <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
                     <h3 className="text-xl font-semibold mb-4">Configuração de Mensagens</h3>
-                    <div className="space-y-8">
+                    <div className="space-y-6">
                         <div>
                             <div className="flex justify-between items-center mb-2">
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                     Template de Cobrança WhatsApp
                                 </label>
-                                <Button size="sm" variant="secondary" onClick={() => handleResetTemplate('whatsappMessageTemplate')}>
+                                <Button size="sm" variant="secondary" onClick={handleResetTemplate}>
                                     <SparklesIcon className="w-4 h-4 mr-1 text-yellow-500" />
-                                    Restaurar Padrão
+                                    Restaurar Modelo Padrão
                                 </Button>
                             </div>
                             <textarea
@@ -956,14 +945,21 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                 placeholder="Olá {CLIENTE}, ..."
                             />
                             <div className="text-sm text-gray-500 dark:text-gray-400">
-                                <p>Variáveis: <strong>{`{CLIENTE}, {VALOR}, {VENCIMENTO}, {PIX}, {DESTINATARIO}`}</strong></p>
+                                <p>Variáveis disponíveis para substituição:</p>
+                                <ul className="list-disc list-inside mt-1">
+                                    <li><strong>{`{CLIENTE}`}</strong>: Nome do Cliente</li>
+                                    <li><strong>{`{VALOR}`}</strong>: Valor da mensalidade</li>
+                                    <li><strong>{`{VENCIMENTO}`}</strong>: Data de vencimento</li>
+                                    <li><strong>{`{PIX}`}</strong>: Chave PIX</li>
+                                    <li><strong>{`{DESTINATARIO}`}</strong>: Nome do beneficiário</li>
+                                </ul>
                             </div>
                         </div>
 
                          <div>
                             <div className="flex justify-between items-center mb-2">
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Template de Aviso/Anúncio Geral
+                                    Template de Aviso/Anúncio WhatsApp
                                 </label>
                             </div>
                             <textarea
@@ -974,34 +970,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                 className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2"
                                 placeholder="Atenção! ..."
                             />
-                             <div className="text-sm text-gray-500 dark:text-gray-400">
-                                <p>Variáveis: <strong>{`{CLIENTE}, {LOGIN}, {SENHA}`}</strong></p>
-                            </div>
-                        </div>
-
-                        <div className="pt-4 border-t dark:border-gray-700">
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                                    Template: Comunicado de Reajuste de Preço (Painel do Cliente)
-                                </label>
-                                <Button size="sm" variant="secondary" onClick={() => handleResetTemplate('priceReadjustmentMessageTemplate')}>
-                                    <SparklesIcon className="w-4 h-4 mr-1 text-yellow-500" />
-                                    Restaurar Padrão
-                                </Button>
-                            </div>
-                            <textarea
-                                name="priceReadjustmentMessageTemplate"
-                                value={localSettings.priceReadjustmentMessageTemplate || ''}
-                                onChange={(e) => handleSimpleChange(e)}
-                                rows={4}
-                                className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2"
-                                placeholder="Comunicado: Atualização de Preços..."
-                            />
                             <div className="text-sm text-gray-500 dark:text-gray-400">
-                                <p>Variáveis disponíveis:</p>
+                                <p>Variáveis disponíveis para substituição:</p>
                                 <ul className="list-disc list-inside mt-1">
-                                    <li><strong>{`{VALOR}`}</strong>: Novo valor da mensalidade calculado</li>
-                                    <li><strong>{`{DATA}`}</strong>: Data de início da vigência</li>
+                                    <li><strong>{`{CLIENTE}`}</strong>: Nome do Cliente</li>
+                                    <li><strong>{`{LOGIN}`}</strong>: E-mail do cliente</li>
+                                    <li><strong>{`{SENHA}`}</strong>: Senha fictícia</li>
                                 </ul>
                             </div>
                         </div>
@@ -1042,17 +1016,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                         
                         {impactAnalysis.length > 0 && (
                             <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded flex justify-between items-center">
-                                {impactAnalysis.length > 0 && (
-                                    <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded flex justify-between items-center">
-                                        <div>
-                                            <p className="text-sm font-bold text-blue-800 dark:text-blue-200">Simulação de Impacto em Tempo Real</p>
-                                            <p className="text-xs text-blue-700 dark:text-blue-300">Com estas alterações, o faturamento mensal variará em:</p>
-                                        </div>
-                                        <div className={`text-lg font-bold ${totalRevenueDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            {totalRevenueDiff >= 0 ? '+' : ''}R$ {totalRevenueDiff.toFixed(2)}
-                                        </div>
-                                    </div>
-                                )}
+                                <div>
+                                    <p className="text-sm font-bold text-blue-800 dark:text-blue-200">Simulação de Impacto em Tempo Real</p>
+                                    <p className="text-xs text-blue-700 dark:text-blue-300">Com estas alterações, o faturamento mensal variará em:</p>
+                                </div>
+                                <div className={`text-lg font-bold ${totalRevenueDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {totalRevenueDiff >= 0 ? '+' : ''}R$ {totalRevenueDiff.toFixed(2)}
+                                </div>
                             </div>
                         )}
 
@@ -1062,7 +1032,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                         </p>
                         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                             <Input label="Valor por KM" name="perKm" type="number" value={localSettings.pricing.perKm} onChange={(e) => handleSimpleChange(e, 'pricing')} />
-                            <Input label="Raio de Atendimento Grátis (KM)" name="serviceRadius" type="number" value={localSettings.pricing.serviceRadius} onChange={(e) => handleSimpleChange(e, 'pricing')} />
                             <Input label="Taxa Água de Poço" name="wellWaterFee" type="number" value={localSettings.pricing.wellWaterFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
                             <Input label="Taxa de Produtos" name="productsFee" type="number" value={localSettings.pricing.productsFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
                             <Input label="Taxa Piscina de Festa" name="partyPoolFee" type="number" value={localSettings.pricing.partyPoolFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />

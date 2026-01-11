@@ -41,4 +41,5 @@ const storage = firebase.storage();
 
 const firebaseExport = firebase;
 
-export { auth, db, storage, firebaseExport as firebase };
+// FIX: Export firebaseConfig to fix error "Module '../firebase' declares 'firebaseConfig' locally, but it is not exported"
+export { auth, db, storage, firebaseExport as firebase, firebaseConfig };

@@ -9,31 +9,48 @@ export const useAuth = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const unsubscribe = auth.onAuthStateChanged(async (firebaseUser: any) => {
+        let unsubscribeDoc: () => void = () => {};
+
+        const unsubscribeAuth = auth.onAuthStateChanged(async (firebaseUser: any) => {
             setUser(firebaseUser);
+            
             if (firebaseUser) {
-                try {
-                    const doc = await db.collection('users').doc(firebaseUser.uid).get();
-                    if (doc.exists) {
-                        setUserData(doc.data() as UserData);
-                    } else {
-                        // Handle case where user exists in Auth but not Firestore
-                        setUserData(null);
-                    }
-                } catch (error) {
-                    console.error("Error fetching user data:", error);
+                // Se o usuário for anônimo, ele não tem documento na coleção 'users'
+                if (firebaseUser.isAnonymous) {
+                    setUserData(null);
+                    setLoading(false);
+                } else {
+                    // Para usuários reais, escutamos o documento do perfil em tempo real
+                    unsubscribeDoc = db.collection('users').doc(firebaseUser.uid).onSnapshot((doc: any) => {
+                        if (doc.exists) {
+                            setUserData(doc.data() as UserData);
+                        } else {
+                            setUserData(null);
+                        }
+                        setLoading(false);
+                    }, (error: any) => {
+                        console.error("Error fetching user data:", error);
+                        setLoading(false);
+                    });
                 }
             } else {
                 setUserData(null);
+                setLoading(false);
             }
-            setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribeAuth();
+            unsubscribeDoc();
+        };
     }, []);
 
     const login = (email: string, pass: string) => {
         return auth.signInWithEmailAndPassword(email, pass);
+    };
+
+    const loginAnonymously = () => {
+        return auth.signInAnonymously();
     };
 
     const logout = () => {
@@ -48,5 +65,14 @@ export const useAuth = () => {
         }
     };
 
-    return { user, userData, loading, login, logout, changePassword };
+    return { 
+        user, 
+        userData, 
+        loading, 
+        isAnonymous: user?.isAnonymous || false,
+        login, 
+        loginAnonymously, 
+        logout, 
+        changePassword 
+    };
 };

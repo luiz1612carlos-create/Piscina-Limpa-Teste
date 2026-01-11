@@ -7,7 +7,7 @@ import { Spinner } from '../../components/Spinner';
 import { Modal } from '../../components/Modal';
 import { Input } from '../../components/Input';
 import { SparklesIcon, CheckBadgeIcon } from '../../constants';
-import { calculateDrivingDistance, calculateClientMonthlyFee } from '../../utils/calculations';
+import { calculateDrivingDistance, calculateClientMonthlyFee, formatAddressForGeocoding } from '../../utils/calculations';
 
 interface ApprovalsViewProps {
     appContext: AppContextType;
@@ -95,10 +95,10 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
 
         setIsCalculatingDistance(true);
         try {
-            const origin = `${settings.baseAddress.street}, ${settings.baseAddress.number}, ${settings.baseAddress.city} - ${settings.baseAddress.state}`;
-            const destination = `${approvalBudget.address.street}, ${approvalBudget.address.number}, ${approvalBudget.address.city} - ${approvalBudget.address.state}`;
+            const originStr = formatAddressForGeocoding(settings.baseAddress);
+            const destinationStr = formatAddressForGeocoding(approvalBudget.address);
 
-            const km = await calculateDrivingDistance(origin, destination);
+            const km = await calculateDrivingDistance(originStr, destinationStr);
 
             if (km >= 0) {
                 setDistance(km);
@@ -109,7 +109,7 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
 
         } catch (error: any) {
             console.error(error);
-            showNotification("Erro ao calcular distância automaticamente. Tente inserir manualmente.", 'error');
+            showNotification("Erro ao calcular distância automaticamente. Verifique se os endereços estão corretos.", 'error');
         } finally {
             setIsCalculatingDistance(false);
         }
