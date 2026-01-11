@@ -450,7 +450,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         if (!budgetDoc.exists) throw new Error("Orçamento não encontrado.");
         const budget = budgetDoc.data() as BudgetQuote;
 
-        // Criar UID amigável para debug se necessário, mas o Firebase gera o oficial.
         const secondaryApp = firebase.initializeApp(firebaseConfig, `AppApproval_${Date.now()}`);
         
         try {
@@ -459,7 +458,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
             
             const batch = db.batch();
             
-            // 1. Criar perfil de acesso
             batch.set(db.collection('users').doc(newUid), { 
                 name: budget.name, 
                 email: budget.email, 
@@ -467,7 +465,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
                 uid: newUid 
             });
             
-            // 2. Criar registro de cliente
             const clientRef = db.collection('clients').doc();
             batch.set(clientRef, {
                 uid: newUid, 
@@ -489,12 +486,11 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
                 fidelityPlan: budget.fidelityPlan || null
             });
             
-            // 3. Atualizar orçamento
             batch.update(db.collection('pre-budgets').doc(budgetId), { status: 'approved' });
             
             await batch.commit();
         } catch (error: any) {
-            console.error("Erro na aprovação atômica:", error);
+            console.error("Erro na aprovação:", error);
             throw error;
         } finally {
             await secondaryApp.delete();

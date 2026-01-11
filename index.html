@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Piscina Limpa</title>
+    <title>Piscina Limpa | Sistema de Gestão</title>
     
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#1f2937">
@@ -41,11 +41,13 @@
     <!-- Chart.js for Reports -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <!-- Google Gemini AI (Carregamento Correto para Navegador) -->
+    <!-- Html2Canvas for Logo Builder -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- Google Gemini AI Setup -->
     <script type="module">
       import { GoogleGenAI } from "https://esm.run/@google/genai";
       window.GoogleGenAI = GoogleGenAI;
-      // Previne erro de 'process is not defined' no navegador
       window.process = window.process || { env: { API_KEY: '' } };
     </script>
 
@@ -66,7 +68,6 @@
     <div id="root" class="h-full"></div>
 
     <script>
-      // Suas credenciais do Firebase (Atualizadas)
       window.firebaseConfig = {
         apiKey: "AIzaSyAGcNaVkzxTdzsR10RSsgHH56M6yGcVH0Y",
         authDomain: "sos-piscinalimpa-56349.firebaseapp.com",
@@ -77,29 +78,22 @@
       };
     </script>
 
-    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
-    <!-- Application Entry Point (ÚNICO) -->
     <script type="module" src="index.tsx"></script>
     
-    <!-- Service Worker for PWA -->
     <script>
         if ("serviceWorker" in navigator) {
             window.addEventListener('load', () => {
-                // USANDO CAMINHO RELATIVO PARA EVITAR ERRO DE ORIGEM
-                navigator.serviceWorker.register("./sw.js").then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                }, err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
+                navigator.serviceWorker.register("./sw.js").then(reg => {
+                    console.log('SW registered');
+                }).catch(err => console.log('SW failed', err));
             });
         }
     </script>
-
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>

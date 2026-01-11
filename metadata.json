@@ -1,5 +1,7 @@
 {
-  "name": " Piscina Limpa Teste",
-  "description": "A complete web application for a pool maintenance company, allowing administrators to manage clients, routes, approvals, and a store, while clients can view their service details and make purchases.",
-  "requestFramePermissions": []
+  "name": "Piscina Limpa teste",
+  "description": "Sistema completo de gerenciamento de manutenção de piscinas com painéis para Admin, Cliente e Técnico.",
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

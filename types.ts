@@ -79,13 +79,6 @@ export interface Visit {
     photoUrl?: string;
 }
 
-export interface ScheduledPlanChange {
-    newPlan: PlanType;
-    newPrice: number;
-    fidelityPlan?: FidelityPlan;
-    effectiveDate?: any;
-}
-
 export interface EmergencyRequest {
     id: string;
     clientId: string;
@@ -95,6 +88,13 @@ export interface EmergencyRequest {
     reason: string;
     status: EmergencyStatus;
     createdAt: any;
+}
+
+export interface ScheduledPlanChange {
+    newPlan: PlanType;
+    newPrice: number;
+    fidelityPlan?: FidelityPlan;
+    effectiveDate?: any;
 }
 
 export interface Client {
@@ -340,7 +340,6 @@ export interface PendingPriceChange {
     status: 'pending' | 'applied';
     createdAt: any;
 }
-
 
 export type NotificationType = 'success' | 'error' | 'info';
 
