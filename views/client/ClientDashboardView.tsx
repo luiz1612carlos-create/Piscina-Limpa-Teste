@@ -38,7 +38,8 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     
     const [isPlanUpgradeModalOpen, setIsPlanUpgradeModalOpen] = useState(false);
     const [isRequestingPlanChange, setIsRequestingPlanChange] = useState(false);
-    const [selectedUpgradeOptionId, setSelectedUpgradeOptionId] = useState<string>('monthly');
+    const [selectedUpgradeOptionId, setSelectedUpgradeOptionId] = useState<string>('');
+    const [hasAcceptedUpgradeTerms, setHasAcceptedUpgradeTerms] = useState(false);
 
     const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
     const [emergencyReason, setEmergencyReason] = useState('');
@@ -144,30 +145,32 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         if (!activePlanChangeRequest || !activePlanChangeRequest.proposedPrice || !settings) return [];
         
         const basePrice = activePlanChangeRequest.proposedPrice;
-        
-        const options = [
-            {
-                id: 'monthly',
-                title: 'Mensal (Sem Fidelidade)',
-                price: basePrice,
-                discountPercent: 0,
-                fidelityPlan: undefined as FidelityPlan | undefined
-            }
-        ];
+        const options: any[] = [];
         
         settings.fidelityPlans.forEach(plan => {
             const discount = basePrice * (plan.discountPercent / 100);
             options.push({
                 id: plan.id,
-                title: `Fidelidade ${plan.months} Meses`,
+                title: `${plan.months} Meses`,
+                basePrice: basePrice,
                 price: basePrice - discount,
                 discountPercent: plan.discountPercent,
+                savings: discount,
                 fidelityPlan: plan
             });
         });
         
-        return options;
+        return options.sort((a, b) => b.discountPercent - a.discountPercent);
     }, [activePlanChangeRequest, settings]);
+
+    useEffect(() => {
+        if (isPlanUpgradeModalOpen) {
+            setHasAcceptedUpgradeTerms(false);
+            if (upgradeOptions.length > 0 && !selectedUpgradeOptionId) {
+                setSelectedUpgradeOptionId(upgradeOptions[0].id);
+            }
+        }
+    }, [isPlanUpgradeModalOpen, upgradeOptions]);
 
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -200,13 +203,14 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
     const isBlockedByDueDate = useMemo(() => {
         if (!clientData) return true;
+        if (clientData.payment.status === 'Pago') return false;
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const dueDate = new Date(clientData.payment.dueDate);
         dueDate.setHours(0, 0, 0, 0);
-        const fifteenDaysFromNow = new Date(today);
-        fifteenDaysFromNow.setDate(today.getDate() + 15);
-        return clientData.payment.status !== 'Pago' && dueDate <= fifteenDaysFromNow;
+        const diffTime = dueDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return diffDays <= 15;
     }, [clientData]);
     
     const hasPendingAdvanceRequest = useMemo(() => {
@@ -216,7 +220,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
     const disabledTitle = useMemo(() => {
         if (hasPendingAdvanceRequest) return "Você já possui uma solicitação de adiantamento pendente.";
-        if (isBlockedByDueDate) return "Quite sua fatura atual para liberar esta opção (vencimento próximo ou em atraso).";
+        if (isBlockedByDueDate) return "Opção bloqueada devido ao vencimento próximo. Regularize sua mensalidade atual primeiro.";
         return "Ver opções de desconto";
     }, [hasPendingAdvanceRequest, isBlockedByDueDate]);
 
@@ -250,7 +254,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     };
     
     const handleAcceptPlanChange = async () => {
-        if (!activePlanChangeRequest || !activePlanChangeRequest.proposedPrice) return;
+        if (!activePlanChangeRequest || !activePlanChangeRequest.proposedPrice || !hasAcceptedUpgradeTerms) return;
         const selectedOption = upgradeOptions.find(opt => opt.id === selectedUpgradeOptionId);
         if (!selectedOption) return;
         setIsRequestingPlanChange(true);
@@ -342,6 +346,9 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
     const upgradeBtn = getUpgradeButtonProps();
 
+    const vipBenefitsList = settings.plans.vip.benefits;
+    const hasProductsIncluded = vipBenefitsList.some(b => b.toLowerCase().includes('produto'));
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
@@ -397,21 +404,31 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
                 {isAdvancePlanGloballyAvailable && settings.advancePaymentOptions.length > 0 &&
                     (!showStatusCard || (mostRecentRequest && mostRecentRequest.status === 'rejected')) && (
-                    <div className="bg-primary-500 text-white rounded-lg p-6 flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg">
-                        <div className="text-center md:text-left">
+                    <div className="bg-primary-500 text-white rounded-lg p-6 flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg overflow-hidden relative">
+                        <div className="text-center md:text-left z-10">
                             <h3 className="font-bold text-xl">{settings.features.advancePaymentTitle}</h3>
                             <p className="text-primary-100">{advancePlanSubtitle}</p>
+                            
+                            {isBlockedByDueDate && (
+                                <div className="mt-3 p-2 bg-yellow-400 text-yellow-900 text-xs font-black rounded-md inline-flex items-center animate-bounce-slow">
+                                    <CurrencyDollarIcon className="w-4 h-4 mr-1" />
+                                    Regularize sua mensalidade atual para liberar novos descontos.
+                                </div>
+                            )}
                         </div>
                         <Button 
                             onClick={() => setIsAdvanceModalOpen(true)} 
                             variant="light"
-                            className="flex-shrink-0"
+                            className="flex-shrink-0 z-10"
                             size="lg"
                             disabled={isBlockedByDueDate || hasPendingAdvanceRequest}
                             title={disabledTitle}
                         >
                             {mostRecentRequest?.status === 'rejected' && showStatusCard ? 'Tentar Novamente' : 'Ver Opções de Desconto'}
                         </Button>
+                        <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none">
+                             <SparklesIcon className="w-32 h-32" />
+                        </div>
                     </div>
                 )}
                 
@@ -419,21 +436,31 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                  settings.features.vipPlanEnabled && 
                  (settings.features.planUpgradeEnabled || activePlanChangeRequest) && 
                  !clientData.scheduledPlanChange && (
-                    <Card className="border-2 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/10">
-                        <CardContent className="flex flex-col md:flex-row items-center justify-between gap-4">
+                    <Card className={`border-2 transition-all relative overflow-hidden group ${activePlanChangeRequest?.status === 'quoted' ? 'border-yellow-500 bg-gradient-to-r from-yellow-50 to-amber-50 dark:from-yellow-900/10 dark:to-amber-900/10 shadow-lg shadow-yellow-500/20' : 'border-primary-400 bg-blue-50 dark:bg-blue-900/10'}`}>
+                        <div className="absolute -right-4 -top-4 opacity-5 group-hover:scale-110 transition-transform duration-700">
+                             <SparklesIcon className="w-32 h-32 text-yellow-600" />
+                        </div>
+                        <CardContent className="flex flex-col md:flex-row items-center justify-between gap-4 relative z-10">
                             <div className="flex-1">
-                                <h3 className="text-lg font-bold text-yellow-800 dark:text-yellow-200 flex items-center">
-                                    <SparklesIcon className="w-5 h-5 mr-2 text-yellow-600" />
-                                    {settings.features.vipUpgradeTitle || "Descubra o Plano VIP"}
+                                <h3 className={`text-xl font-black flex items-center ${activePlanChangeRequest?.status === 'quoted' ? 'text-yellow-700 dark:text-yellow-300' : 'text-primary-700 dark:text-primary-300'}`}>
+                                    {activePlanChangeRequest?.status === 'quoted' ? (
+                                        <>✨ {settings.features.vipUpgradeTitle || "Seu Convite VIP Chegou!"}</>
+                                    ) : (
+                                        <><SparklesIcon className="w-5 h-5 mr-2" /> {settings.features.vipUpgradeTitle || "Descubra o Plano VIP"}</>
+                                    )}
                                 </h3>
-                                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                                    {settings.features.vipUpgradeDescription || "Tenha produtos inclusos, atendimento prioritário e descontos exclusivos."}
+                                <p className={`text-sm mt-1 font-medium ${activePlanChangeRequest?.status === 'quoted' ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                                    {activePlanChangeRequest?.status === 'quoted' ? (
+                                        "Analisamos sua piscina e preparamos condições imperdíveis para você ter tranquilidade total."
+                                    ) : (
+                                        settings.features.vipUpgradeDescription || "Tenha atendimento prioritário e descontos exclusivos em seu novo plano."
+                                    )}
                                 </p>
                             </div>
                             <Button 
                                 onClick={upgradeBtn.onClick}
-                                variant="secondary"
-                                className="border-yellow-500 text-yellow-700 hover:bg-yellow-200"
+                                variant={activePlanChangeRequest?.status === 'quoted' ? 'primary' : 'secondary'}
+                                className={`px-8 py-3 rounded-full font-black uppercase tracking-wider shadow-md ${activePlanChangeRequest?.status === 'quoted' ? 'bg-yellow-500 hover:bg-yellow-600 text-white' : 'border-primary-500 text-primary-700 hover:bg-blue-100'}`}
                                 isLoading={isRequestingPlanChange}
                                 disabled={upgradeBtn.disabled}
                             >
@@ -554,15 +581,30 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 {currentPlanDetails && (
                     <Card data-tour-id="plan-info">
                         <CardHeader data-tour-id="plan-info-header">
-                            <div className="flex items-center gap-2">
-                                <CheckBadgeIcon className="w-6 h-6 text-primary-500" />
-                                <h3 className="text-xl font-semibold">Meu Plano Atual</h3>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <CheckBadgeIcon className="w-6 h-6 text-primary-500" />
+                                    <h3 className="text-xl font-semibold">Meu Plano Atual</h3>
+                                </div>
+                                {clientData.scheduledPlanChange && (
+                                    <div className="animate-pulse" title="Sua mudança para VIP está agendada para o próximo ciclo financeiro.">
+                                        <SparklesIcon className="w-6 h-6 text-yellow-500" />
+                                    </div>
+                                )}
                             </div>
                         </CardHeader>
                         <CardContent>
-                            <h4 className={`text-2xl font-bold mb-1 ${currentPlanDetails.planType === 'VIP' ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary-600 dark:text-primary-400'}`}>
-                                {currentPlanDetails.title}
-                            </h4>
+                            <div className="mb-4">
+                                <h4 className={`text-2xl font-bold mb-1 ${currentPlanDetails.planType === 'VIP' ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary-600 dark:text-primary-400'}`}>
+                                    {currentPlanDetails.title}
+                                </h4>
+                                {clientData.scheduledPlanChange && (
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">
+                                        Upgrade Agendado (VIP)
+                                    </span>
+                                )}
+                            </div>
+                            
                             {currentPlanDetails.fidelity && (
                                 <p className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-4">
                                     Fidelidade: {currentPlanDetails.fidelity.months} Meses ({currentPlanDetails.fidelity.discountPercent}% OFF)
@@ -668,41 +710,103 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 <Modal
                     isOpen={isPlanUpgradeModalOpen}
                     onClose={() => setIsPlanUpgradeModalOpen(false)}
-                    title="Proposta de Upgrade VIP"
+                    title="✨ Sua Piscina no Nível VIP"
+                    size="lg"
                     footer={
-                        <>
-                            <Button variant="danger" onClick={handleRejectPlanChange} isLoading={isRequestingPlanChange}>Recusar</Button>
-                            <Button onClick={handleAcceptPlanChange} isLoading={isRequestingPlanChange}>Aceitar Upgrade</Button>
-                        </>
+                        <div className="flex flex-col sm:flex-row justify-between w-full items-center gap-4">
+                            <button onClick={handleRejectPlanChange} className="text-sm font-bold text-red-500 hover:underline uppercase tracking-widest order-2 sm:order-1">Não tenho interesse</button>
+                            <Button 
+                                onClick={handleAcceptPlanChange} 
+                                isLoading={isRequestingPlanChange}
+                                disabled={!hasAcceptedUpgradeTerms || isRequestingPlanChange}
+                                className={`w-full sm:w-auto px-12 py-4 rounded-full font-black text-lg shadow-xl order-1 sm:order-2 ${hasAcceptedUpgradeTerms ? 'bg-yellow-500 hover:bg-yellow-600 text-white shadow-yellow-500/30 animate-bounce-slow' : 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none'}`}
+                            >
+                                Confirmar Upgrade VIP
+                            </Button>
+                        </div>
                     }
                 >
-                    <div className="space-y-4">
-                        <p className="font-semibold text-lg text-center">Parabéns pela iniciativa!</p>
-                        <p className="text-center text-gray-600 dark:text-gray-400">
-                            Preparamos opções especiais para você migrar para o Plano VIP.
-                        </p>
-                        <div className="space-y-3 mt-4">
-                            {upgradeOptions.map(option => (
-                                <div 
-                                    key={option.id}
-                                    onClick={() => setSelectedUpgradeOptionId(option.id)}
-                                    className={`p-4 border-2 rounded-lg cursor-pointer transition-all flex justify-between items-center ${selectedUpgradeOptionId === option.id ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-primary-300'}`}
-                                >
-                                    <div>
-                                        <p className="font-bold">{option.title}</p>
-                                        {option.discountPercent > 0 && (
-                                            <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full dark:bg-green-900 dark:text-green-200">
-                                                {option.discountPercent}% OFF
-                                            </span>
+                    <div className="space-y-6">
+                        <div className="text-center">
+                            <div className="inline-flex items-center justify-center p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-full mb-4">
+                                 <SparklesIcon className="w-10 h-10 text-yellow-600" />
+                            </div>
+                            <h3 className="text-2xl font-black text-gray-800 dark:text-gray-100">Parabéns pela decisão!</h3>
+                            <p className="text-gray-600 dark:text-gray-400 mt-2">
+                                Você está a um passo de ter <strong>{hasProductsIncluded ? 'todos os produtos inclusos, ' : ''}atendimento de emergência</strong> e uma piscina sempre cristalina sem preocupações.
+                            </p>
+                        </div>
+
+                        {activePlanChangeRequest.adminNotes && (
+                            <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border-l-4 border-blue-500 italic text-sm text-blue-800 dark:text-blue-200">
+                                "{activePlanChangeRequest.adminNotes}"
+                            </div>
+                        )}
+
+                        <div className="space-y-4">
+                            <p className="font-black text-sm uppercase tracking-widest text-gray-500">Escolha o seu plano de fidelidade:</p>
+                            <div className="grid grid-cols-1 gap-3">
+                                {upgradeOptions.map((option, idx) => (
+                                    <div 
+                                        key={option.id}
+                                        onClick={() => setSelectedUpgradeOptionId(option.id)}
+                                        className={`p-4 border-2 rounded-2xl cursor-pointer transition-all flex justify-between items-center relative overflow-hidden group ${selectedUpgradeOptionId === option.id ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 ring-2 ring-yellow-500 ring-offset-2 dark:ring-offset-gray-900' : 'border-gray-200 dark:border-gray-700 hover:border-yellow-300'}`}
+                                    >
+                                        {idx === 0 && (
+                                            <div className="absolute -left-10 top-2 bg-yellow-500 text-white text-[10px] font-black px-10 py-1 -rotate-45 uppercase tracking-tighter">
+                                                Melhor Valor
+                                            </div>
                                         )}
+                                        <div className="flex items-center gap-4">
+                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedUpgradeOptionId === option.id ? 'border-yellow-500 bg-yellow-500' : 'border-gray-300'}`}>
+                                                {selectedUpgradeOptionId === option.id && <CheckIcon className="w-4 h-4 text-white" />}
+                                            </div>
+                                            <div>
+                                                <p className="font-black text-lg text-gray-900 dark:text-gray-100">{option.title}</p>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">-{option.discountPercent}% OFF</span>
+                                                    <span className="text-xs text-gray-400 line-through">R$ {option.basePrice.toFixed(2)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-2xl font-black text-yellow-600 dark:text-yellow-400">
+                                                R$ {option.price.toFixed(2)}<span className="text-xs text-gray-500 font-normal">/mês</span>
+                                            </p>
+                                            <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">Economize R$ {option.savings.toFixed(2)}</p>
+                                        </div>
                                     </div>
-                                    <div className="text-right">
-                                        <p className="text-xl font-bold text-primary-600 dark:text-primary-400">
-                                            R$ {option.price.toFixed(2)}/mês
-                                        </p>
-                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/10 rounded-xl border border-yellow-200 dark:border-yellow-700/50 mt-4">
+                            <label className="flex items-start gap-3 cursor-pointer group">
+                                <input 
+                                    type="checkbox" 
+                                    checked={hasAcceptedUpgradeTerms}
+                                    onChange={(e) => setHasAcceptedUpgradeTerms(e.target.checked)}
+                                    className="mt-1 h-5 w-5 rounded border-yellow-400 text-yellow-600 focus:ring-yellow-500 cursor-pointer"
+                                />
+                                <div className="text-sm">
+                                    <p className="font-bold text-yellow-800 dark:text-yellow-200">Declaração de Aceite</p>
+                                    <p className="text-yellow-700 dark:text-yellow-400">
+                                        Li e concordo integralmente com os <button type="button" onClick={() => setIsTermsModalOpen(true)} className="underline font-bold hover:text-yellow-600">Termos e Condições de Uso</button> do Plano VIP.
+                                    </p>
                                 </div>
-                            ))}
+                            </label>
+                        </div>
+
+                        <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
+                            <p className="font-bold text-xs uppercase tracking-widest text-gray-400 mb-3 text-center">Você terá acesso a:</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {vipBenefitsList.slice(0, 4).map((b, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                                        <CheckBadgeIcon className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+                                        <span>{b}</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </Modal>
@@ -782,14 +886,54 @@ const ReplenishmentCard = ({ quote, client, updateStatus, createOrder, showNotif
     );
 };
 
-const RequestStatusCard = ({ request }: any) => (
-    <Card className={request.status === 'rejected' ? 'border-red-500 border-l-4' : 'border-yellow-500 border-l-4'}>
-        <CardContent>
-            <h4 className="font-bold">Status da Solicitação de Adiantamento</h4>
-            <p>Status: {request.status === 'pending' ? 'Em análise' : 'Rejeitado'}</p>
-        </CardContent>
-    </Card>
-);
+const RequestStatusCard = ({ request }: any) => {
+    const isApproved = request.status === 'approved';
+    const isRejected = request.status === 'rejected';
+    const isPending = request.status === 'pending';
+
+    const getStatusText = () => {
+        if (isPending) return 'Em análise';
+        if (isApproved) return 'Aprovado';
+        if (isRejected) return 'Rejeitado';
+        return request.status;
+    };
+
+    const getBorderClass = () => {
+        if (isPending) return 'border-yellow-500';
+        if (isApproved) return 'border-green-500';
+        if (isRejected) return 'border-red-500';
+        return 'border-gray-200';
+    };
+
+    const getBgClass = () => {
+        if (isPending) return 'bg-yellow-50 dark:bg-yellow-900/10';
+        if (isApproved) return 'bg-green-50 dark:bg-green-900/10';
+        if (isRejected) return 'bg-red-50 dark:bg-red-900/10';
+        return 'bg-white dark:bg-gray-800';
+    };
+
+    return (
+        <Card className={`${getBorderClass()} border-l-4 ${getBgClass()}`}>
+            <CardContent className="flex items-center justify-between">
+                <div>
+                    <h4 className="font-bold text-gray-800 dark:text-gray-200">Status da Solicitação de Adiantamento</h4>
+                    <div className="flex items-center gap-2 mt-1">
+                        {isApproved && <CheckBadgeIcon className="w-5 h-5 text-green-500" />}
+                        <p className={`font-black ${isApproved ? 'text-green-600 dark:text-green-400' : isRejected ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                            Status: {getStatusText()}
+                        </p>
+                    </div>
+                    {isApproved && (
+                        <p className="text-xs text-green-700 dark:text-green-300 mt-2">
+                            Seu pagamento foi confirmado e seu desconto aplicado! Aproveite a economia.
+                        </p>
+                    )}
+                </div>
+                {isApproved && <SparklesIcon className="w-10 h-10 text-green-500 opacity-20" />}
+            </CardContent>
+        </Card>
+    );
+};
 
 const EventSchedulerCard = ({ client, poolEvents, createPoolEvent, showNotification }: any) => {
     const [date, setDate] = useState('');
