@@ -239,6 +239,42 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         return generatedCount;
     };
     
+    // Watcher de Pagamentos: Transforma 'Pago' em 'Pendente' quando a data chega
+    useEffect(() => {
+        if (!isUserAdmin || clients.length === 0) return;
+
+        const checkExpiredPayments = async () => {
+            const now = new Date();
+            now.setHours(23, 59, 59, 999); // Final do dia atual
+            
+            const expiredClients = clients.filter(c => {
+                if (c.clientStatus !== 'Ativo' || c.payment.status !== 'Pago') return false;
+                const dueDate = new Date(c.payment.dueDate);
+                // Se a data de vencimento (que é o início do novo ciclo) já passou ou é hoje
+                return dueDate <= now;
+            });
+
+            if (expiredClients.length === 0) return;
+
+            console.log(`Resetando status de pagamento para ${expiredClients.length} clientes com ciclo expirado.`);
+            
+            const batch = db.batch();
+            expiredClients.forEach(client => {
+                const clientRef = db.collection('clients').doc(client.id);
+                batch.update(clientRef, { 'payment.status': 'Pendente' });
+            });
+
+            try {
+                await batch.commit();
+            } catch (error) {
+                console.error("Erro ao resetar ciclos de pagamento:", error);
+            }
+        };
+
+        const timer = setTimeout(checkExpiredPayments, 5000);
+        return () => clearTimeout(timer);
+    }, [isUserAdmin, clients]);
+
     useEffect(() => {
         if (!isUserAdmin || pendingPriceChanges.length === 0 || !settings) return;
 

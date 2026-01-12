@@ -3,7 +3,6 @@ import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { AppContextType, Client, Transaction } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
-// FIX: Added missing ChartBarIcon to icons import
 import { UsersIcon, CurrencyDollarIcon, CheckBadgeIcon, StoreIcon, TrashIcon, CalendarDaysIcon, ChartBarIcon } from '../../constants';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
@@ -16,9 +15,8 @@ interface ReportsViewProps {
     appContext: AppContextType;
 }
 
-// Helper function to safely convert Firestore timestamps or strings to Date objects
 const toDate = (timestamp: any): Date | null => {
-    if (!timestamp) return new Date(); // Se pendente, assume agora para atualização instantânea na UI
+    if (!timestamp) return new Date();
     
     if (typeof timestamp.toDate === 'function') {
         return timestamp.toDate();
@@ -51,7 +49,6 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
 
         const activeClients = clients.filter(c => c.clientStatus === 'Ativo');
         
-        // Faturamento Real: Soma de todas as transações deste mês
         const monthlyRevenue = transactions.filter(t => {
             const d = toDate(t.date);
             return d && d >= startOfMonth;
@@ -112,14 +109,21 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
 
     const clientsWithPendingPayments = useMemo(() => {
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        today.setHours(23, 59, 59, 999);
         const sevenDaysFromNow = new Date();
         sevenDaysFromNow.setDate(today.getDate() + 7);
 
         return clients.filter(client => {
-            if (!client.payment.dueDate) return false;
+            if (!client.payment.dueDate || client.clientStatus !== 'Ativo') return false;
             const dueDate = new Date(client.payment.dueDate);
-            return client.payment.status !== 'Pago' && dueDate <= sevenDaysFromNow;
+            
+            // É considerado pendente/atrasado se o status NÃO for Pago 
+            // OU se a data de vencimento (início do novo ciclo) já passou.
+            const isNotPaid = client.payment.status !== 'Pago';
+            const isOverdueByDate = dueDate <= today;
+            const isNearDue = dueDate <= sevenDaysFromNow;
+
+            return isNotPaid || isOverdueByDate || isNearDue;
         }).sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
     }, [clients]);
 
@@ -204,8 +208,15 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
 
     
     const pendingPayments = useMemo(() => {
-        return clients.filter(c => c.payment.status === 'Pendente' || c.payment.status === 'Atrasado')
-            .sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
+        const now = new Date();
+        now.setHours(23, 59, 59, 999);
+
+        return clients.filter(c => {
+            if (c.clientStatus !== 'Ativo') return false;
+            const dueDate = new Date(c.payment.dueDate);
+            // Inclui se o status for pendente OU se a data de vencimento já chegou/passou
+            return (c.payment.status === 'Pendente' || c.payment.status === 'Atrasado' || dueDate <= now);
+        }).sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
     }, [clients]);
 
     const isLoading = loading.clients || loading.orders || loading.budgetQuotes || loading.products || loading.settings || loading.transactions;
@@ -313,11 +324,19 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
                     <CardContent>
                        <DataTable 
                            headers={['Cliente', 'Vencimento', 'Valor']} 
-                           data={pendingPayments.map(c => [
-                               c.name, 
-                               new Date(c.payment.dueDate).toLocaleDateString('pt-BR'), 
-                               `R$ ${settings ? calculateClientMonthlyFee(c, settings).toFixed(2) : 'N/A'}`
-                           ])} 
+                           data={pendingPayments.map(c => {
+                               const dueDate = new Date(c.payment.dueDate);
+                               const now = new Date();
+                               const isAtrasado = dueDate < now;
+                               
+                               return [
+                                   c.name, 
+                                   <span className={isAtrasado ? "text-red-500 font-bold" : ""}>
+                                       {dueDate.toLocaleDateString('pt-BR')}
+                                   </span>, 
+                                   `R$ ${settings ? calculateClientMonthlyFee(c, settings).toFixed(2) : 'N/A'}`
+                               ];
+                           })} 
                        />
                     </CardContent>
                 </Card>
