@@ -85,7 +85,7 @@ const defaultSettings: Settings = {
         planUpgradeEnabled: true,
         vipPlanDisabledMessage: "Em breve!",
         vipUpgradeTitle: "Descubra o Plano VIP",
-        vipUpgradeDescription: "Tenha produtos inclusos, atendimento prioritário e descontos exclusivos.",
+        vipUpgradeDescription: "Tenha acesso a benefícios exclusivos e atendimento prioritário.",
         storeEnabled: true,
         advancePaymentPlanEnabled: false,
         advancePaymentTitle: "Economize com Pagamento Adiantado!",
@@ -282,7 +282,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     useEffect(() => {
         if (!isUserAdmin && !isUserTechnician) return;
 
-        const unsubUsers = db.collection('users').where('role', 'in', ['admin', 'technician']).onSnapshot(snapshot => {
+        const unsubUsers = db.collection('users').where('role', '==', 'admin').onSnapshot(snapshot => {
             setUsers(snapshot.docs.map(doc => doc.data() as UserData));
             setLoadingState('users', false);
         }, error => console.warn("Users listener error:", error));

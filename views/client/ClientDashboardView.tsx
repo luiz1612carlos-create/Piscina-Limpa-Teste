@@ -347,7 +347,23 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     const upgradeBtn = getUpgradeButtonProps();
 
     const vipBenefitsList = settings.plans.vip.benefits;
-    const hasProductsIncluded = vipBenefitsList.some(b => b.toLowerCase().includes('produto'));
+    
+    // Função para gerar descrição inteligente baseada nos benefícios REAIS
+    const generateSmartVipDescription = () => {
+        if (settings.features.vipUpgradeDescription) return settings.features.vipUpgradeDescription;
+        
+        const hasEmergencies = vipBenefitsList.some(b => b.toLowerCase().includes('emergência') || b.toLowerCase().includes('prioritário'));
+        const hasProducts = vipBenefitsList.some(b => b.toLowerCase().includes('produto'));
+        
+        let text = "Mude para o nível VIP e tenha mais tranquilidade.";
+        if (hasEmergencies && hasProducts) text = "Tenha produtos inclusos, atendimento de emergência e suporte prioritário.";
+        else if (hasEmergencies) text = "Garanta atendimento de emergência prioritário e maior agilidade.";
+        else if (hasProducts) text = "Simplifique: tenha todos os produtos de limpeza já inclusos em sua mensalidade.";
+        
+        return text;
+    };
+
+    const vipDescriptionToDisplay = generateSmartVipDescription();
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -453,7 +469,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                     {activePlanChangeRequest?.status === 'quoted' ? (
                                         "Analisamos sua piscina e preparamos condições imperdíveis para você ter tranquilidade total."
                                     ) : (
-                                        settings.features.vipUpgradeDescription || "Tenha atendimento prioritário e descontos exclusivos em seu novo plano."
+                                        vipDescriptionToDisplay
                                     )}
                                 </p>
                             </div>
@@ -733,7 +749,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                             </div>
                             <h3 className="text-2xl font-black text-gray-800 dark:text-gray-100">Parabéns pela decisão!</h3>
                             <p className="text-gray-600 dark:text-gray-400 mt-2">
-                                Você está a um passo de ter <strong>{hasProductsIncluded ? 'todos os produtos inclusos, ' : ''}atendimento de emergência</strong> e uma piscina sempre cristalina sem preocupações.
+                                Você está a um passo de ter <strong>atendimento de emergência</strong> e uma piscina sempre cristalina sem preocupações.
                             </p>
                         </div>
 
