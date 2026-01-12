@@ -26,7 +26,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     const { user, changePassword, showNotification } = authContext;
     const { clients, loading, settings, routes, replenishmentQuotes, updateReplenishmentQuoteStatus, createOrder, createAdvancePaymentRequest, isAdvancePlanGloballyAvailable, advancePaymentRequests, banks, poolEvents, createPoolEvent, pendingPriceChanges, planChangeRequests, requestPlanChange, acceptPlanChange, cancelPlanChangeRequest, emergencyRequests, createEmergencyRequest } = appContext;
     
-    // Use client data from context instead of local fetch to prevent race conditions/loops
     const clientData = useMemo(() => {
         return clients.find(c => c.uid === user.uid) || null;
     }, [clients, user.uid]);
@@ -37,17 +36,14 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
     const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
     
-    // Plan Upgrade State
     const [isPlanUpgradeModalOpen, setIsPlanUpgradeModalOpen] = useState(false);
     const [isRequestingPlanChange, setIsRequestingPlanChange] = useState(false);
     const [selectedUpgradeOptionId, setSelectedUpgradeOptionId] = useState<string>('monthly');
 
-    // Emergency State
     const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
     const [emergencyReason, setEmergencyReason] = useState('');
     const [isSubmittingEmergency, setIsSubmittingEmergency] = useState(false);
 
-    // Calculate Monthly Emergency Usage
     const currentMonthEmergencies = useMemo(() => {
         if (!user || !emergencyRequests) return 0;
         const now = new Date();
@@ -331,7 +327,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         ? settings.features.advancePaymentSubtitleVIP
         : settings.features.advancePaymentSubtitleSimple;
 
-    // Lógica consolidada para o texto e estado do botão de upgrade
     const getUpgradeButtonProps = () => {
         if (activePlanChangeRequest?.status === 'accepted') {
             return { text: 'Upgrade Agendado', disabled: true, onClick: () => {} };
@@ -351,7 +346,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
                 
-                {/* VIP EMERGENCY BUTTON */}
                 {clientData.plan === 'VIP' && (
                     <Card className={`border-2 transition-all ${emergencyLimitReached ? 'border-gray-300 opacity-75' : 'border-red-500 shadow-lg shadow-red-500/20'}`}>
                         <CardContent className="flex flex-col md:flex-row items-center justify-between gap-4 py-6">
@@ -421,7 +415,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                     </div>
                 )}
                 
-                {/* CORREÇÃO: O card agora respeita a flag planUpgradeEnabled */}
                 {clientData.plan === 'Simples' && 
                  settings.features.vipPlanEnabled && 
                  (settings.features.planUpgradeEnabled || activePlanChangeRequest) && 
@@ -630,7 +623,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 </Card>
             </div>
 
-            {/* EMERGENCY MODAL */}
             {isEmergencyModalOpen && (
                 <Modal 
                     isOpen={isEmergencyModalOpen} 
@@ -903,23 +895,72 @@ const AdvancePaymentModal = ({ isOpen, onClose, client, settings, monthlyFee, on
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Adiantamento de Mensalidades">
-            <p className="mb-4">Selecione uma opção para pagar adiantado com desconto:</p>
-            <div className="space-y-2">
-                {settings.advancePaymentOptions.map((opt: any, idx: number) => (
-                    <div 
-                        key={idx} 
-                        onClick={() => setSelectedOption(idx)}
-                        className={`p-3 border rounded cursor-pointer ${selectedOption === idx ? 'border-primary-500 bg-primary-50' : 'border-gray-200'}`}
+        <Modal isOpen={isOpen} onClose={onClose} title="Adiantamento com Desconto" size="lg">
+            <div className="space-y-4">
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/10 border-l-4 border-blue-500 rounded text-sm">
+                    <p className="text-blue-800 dark:text-blue-200">
+                        Selecione uma das opções abaixo para pagar vários meses de uma vez e garantir um desconto exclusivo. 
+                        <strong> Sua economia é calculada na hora!</strong>
+                    </p>
+                </div>
+                
+                <div className="space-y-3">
+                    {settings.advancePaymentOptions.map((opt: any, idx: number) => {
+                        const originalTotal = monthlyFee * opt.months;
+                        const discountedTotal = originalTotal * (1 - opt.discountPercent / 100);
+                        const savings = originalTotal - discountedTotal;
+                        const isSelected = selectedOption === idx;
+
+                        return (
+                            <div 
+                                key={idx} 
+                                onClick={() => setSelectedOption(idx)}
+                                className={`p-4 border-2 rounded-xl cursor-pointer transition-all hover:border-primary-400 group ${isSelected ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 ring-1 ring-primary-500' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}
+                            >
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'border-primary-500 bg-primary-500' : 'border-gray-300'}`}>
+                                            {isSelected && <CheckIcon className="w-4 h-4 text-white" />}
+                                        </div>
+                                        <div>
+                                            <p className="font-black text-lg text-gray-900 dark:text-gray-100">{opt.months} Meses</p>
+                                            <p className="text-xs text-gray-500 line-through font-medium">De: R$ {originalTotal.toFixed(2)}</p>
+                                        </div>
+                                    </div>
+                                    <div className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 text-xs font-black px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                        {opt.discountPercent}% OFF
+                                    </div>
+                                </div>
+                                
+                                <div className="flex justify-between items-end pt-3 border-t border-gray-100 dark:border-gray-700">
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 uppercase font-bold tracking-widest mb-1">Total a pagar</p>
+                                        <p className="text-3xl font-black text-primary-600 dark:text-primary-400">R$ {discountedTotal.toFixed(2)}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="flex items-center gap-1 justify-end text-green-600 dark:text-green-400 mb-0.5">
+                                            <SparklesIcon className="w-4 h-4" />
+                                            <p className="text-xs font-black uppercase">Economia Real</p>
+                                        </div>
+                                        <p className="text-xl font-black text-green-600 dark:text-green-400">R$ {savings.toFixed(2)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <div className="mt-6 flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t dark:border-gray-700">
+                    <Button variant="secondary" onClick={onClose} className="sm:order-1">Cancelar</Button>
+                    <Button 
+                        onClick={handleSubmit} 
+                        isLoading={loading} 
+                        disabled={selectedOption === null}
+                        className="sm:order-2 px-8"
                     >
-                        <p className="font-bold">{opt.months} Meses - {opt.discountPercent}% OFF</p>
-                        <p>Total: R$ {(monthlyFee * opt.months * (1 - opt.discountPercent/100)).toFixed(2)}</p>
-                    </div>
-                ))}
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-                <Button variant="secondary" onClick={onClose}>Cancelar</Button>
-                <Button onClick={handleSubmit} isLoading={loading} disabled={selectedOption === null}>Solicitar</Button>
+                        Confirmar e Solicitar Adiantamento
+                    </Button>
+                </div>
             </div>
         </Modal>
     );
