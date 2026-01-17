@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { AuthContextType, AppContextType, AdminView } from '../../types';
-import { MenuIcon, SunIcon, MoonIcon, LogoutIcon, UsersIcon, RouteIcon, CheckBadgeIcon, StoreIcon, SettingsIcon, ChartBarIcon, DownloadIcon, CalendarDaysIcon, ArchiveBoxIcon, SparklesIcon, ExclamationTriangleIcon } from '../../constants';
+import { MenuIcon, SunIcon, MoonIcon, LogoutIcon, UsersIcon, RouteIcon, CheckBadgeIcon, StoreIcon, SettingsIcon, ChartBarIcon, DownloadIcon, CalendarDaysIcon, ArchiveBoxIcon, SparklesIcon, ExclamationTriangleIcon, DashboardIcon } from '../../constants';
 import { useTheme } from '../../hooks/useTheme';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
 import ClientsView from './ClientsView';
@@ -14,6 +13,7 @@ import AdvancePaymentsView from './AdvancePaymentsView';
 import StockProductsView from './StockProductsView';
 import EventsView from './EventsView';
 import EmergenciesView from './EmergenciesView';
+import AIBotManagerView from './AIBotManagerView';
 
 interface AdminLayoutProps {
     authContext: AuthContextType;
@@ -34,10 +34,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
 
     const menuItems = [
         { id: 'reports', label: 'Relatórios', icon: ChartBarIcon },
+        { id: 'ai_bot', label: 'Robô WhatsApp', icon: SparklesIcon },
         { id: 'emergencies', label: 'Emergências VIP', icon: ExclamationTriangleIcon, count: pendingEmergenciesCount },
         { id: 'approvals', label: 'Aprovações', icon: CheckBadgeIcon, count: totalApprovals },
         { id: 'advances', label: 'Adiantamentos', icon: CalendarDaysIcon, count: appContext.advancePaymentRequests.filter(r => r.status === 'pending').length },
-        { id: 'events', label: 'Eventos', icon: SparklesIcon, count: appContext.poolEvents.filter(e => e.status === 'notified').length },
+        { id: 'events', label: 'Eventos', icon: DashboardIcon, count: appContext.poolEvents.filter(e => e.status === 'notified').length },
         { id: 'clients', label: 'Clientes', icon: UsersIcon },
         { id: 'routes', label: 'Rotas', icon: RouteIcon },
         { id: 'store', label: 'Loja', icon: StoreIcon },
@@ -48,6 +49,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
     const renderView = () => {
         switch (currentView) {
             case 'reports': return <ReportsView appContext={appContext} />;
+            case 'ai_bot': return <AIBotManagerView appContext={appContext} />;
             case 'emergencies': return <EmergenciesView appContext={appContext} />;
             case 'clients': return <ClientsView appContext={appContext} />;
             case 'routes': return <RoutesView appContext={appContext} />;
@@ -89,7 +91,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
                         <h1 className="text-2xl font-bold text-primary-600 dark:text-primary-400">{appContext.settings?.companyName || 'Piscina Limpa'}</h1>
                     )}
                 </div>
-                <nav className="flex-1 p-4 space-y-2">
+                <nav className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
                     {menuItems.map(item => (
                         <button
                             key={item.id}
@@ -99,8 +101,8 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
                             }}
                             className={`w-full flex items-center p-2 rounded-md transition-colors ${currentView === item.id ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                         >
-                            <item.icon className={`w-6 h-6 mr-3 ${item.id === 'emergencies' && item.count ? 'text-red-500 animate-bounce' : ''}`} />
-                            <span className={item.id === 'emergencies' && item.count ? 'font-black text-red-600 dark:text-red-400' : ''}>{item.label}</span>
+                            <item.icon className={`w-6 h-6 mr-3 ${item.id === 'emergencies' && item.count ? 'text-red-500 animate-bounce' : ''} ${item.id === 'ai_bot' ? 'text-purple-500' : ''}`} />
+                            <span className={`${item.id === 'emergencies' && item.count ? 'font-black text-red-600 dark:text-red-400' : ''} ${item.id === 'ai_bot' ? 'font-black text-purple-600 dark:text-purple-400' : ''}`}>{item.label}</span>
                             {item.count !== undefined && item.count > 0 && (
                                 <span className={`ml-auto text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center ${item.id === 'emergencies' ? 'bg-red-600' : 'bg-red-500'}`}>{item.count}</span>
                             )}

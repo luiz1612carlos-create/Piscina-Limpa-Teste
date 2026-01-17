@@ -56,6 +56,7 @@ const defaultSettings: Settings = {
     },
     pixKey: "seu-pix@email.com",
     pixKeyRecipient: "S.O.S Piscina Limpa",
+    googleReviewUrl: "",
     whatsappMessageTemplate: "Olá {CLIENTE}, tudo bem? Passando para lembrar sobre o vencimento da sua mensalidade no valor de R$ {VALOR} no dia {VENCIMENTO}. \n\nChave PIX: {PIX} \nDestinatário: {DESTINATARIO}\n\nAgradecemos a parceria!",
     announcementMessageTemplate: "Atenção! ⚠️\n\nInformamos que nessas datas nossos serviços não estarão disponíveis.\n(Envie a imagem do calendário/aviso após abrir o WhatsApp)\n\nAcesse sua conta do cliente pelo site: https://s-o-s-piscina-limpa.vercel.app/\n\nVá na opção 'Agendar Evento' e faça sua programação. Isso nos ajudará a nos organizar e entregar a qualidade necessária.\n\nAcesse sua conta cliente:\nLogin: {LOGIN}\nSenha: (sua senha de acesso)",
     priceReadjustmentMessageTemplate: "Comunicado: Atualização de Preços\n\nInformamos que, para manter a qualidade de nossos serviços, sua mensalidade será reajustada para R$ {VALOR} a partir de {DATA}.",
@@ -85,7 +86,7 @@ const defaultSettings: Settings = {
         planUpgradeEnabled: true,
         vipPlanDisabledMessage: "Em breve!",
         vipUpgradeTitle: "Descubra o Plano VIP",
-        vipUpgradeDescription: "Tenha acesso a benefícios exclusivos e atendimento prioritário.",
+        vipUpgradeDescription: "Tenha produtos inclusos, atendimento de emergência e suporte prioritário.",
         storeEnabled: true,
         advancePaymentPlanEnabled: false,
         advancePaymentTitle: "Economize com Pagamento Adiantado!",
@@ -506,6 +507,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
                 uid: newUid, 
                 name: budget.name, 
                 email: budget.email, 
+                role: 'client',
                 phone: budget.phone, 
                 address: budget.address,
                 poolDimensions: budget.poolDimensions, 
@@ -698,16 +700,55 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         if (!doc.exists) throw new Error("Solicitação não encontrada.");
         const req = doc.data() as AdvancePaymentRequest;
         const client = clients.find(c => c.uid === req.clientId);
-        if (!client || !client.bankId) throw new Error("Cliente ou banco não encontrado.");
+        if (!client || !client.bankId) throw new Error("Cliente ou banco não associado.");
         const bank = banks.find(b => b.id === client.bankId);
-        if (!bank) throw new Error("Banco não configurado.");
+        if (!bank) throw new Error("Banco configurado no cliente não foi encontrado.");
 
         const batch = db.batch();
-        batch.set(db.collection('transactions').doc(), { clientId: client.id, clientName: client.name, bankId: client.bankId, bankName: bank.name, amount: req.finalAmount, date: firebase.firestore.FieldValue.serverTimestamp() });
-        const nextDueDate = new Date(client.payment.dueDate);
-        nextDueDate.setMonth(nextDueDate.getMonth() + req.months);
-        batch.update(db.collection('clients').doc(client.id), { 'payment.dueDate': nextDueDate.toISOString(), 'payment.status': 'Pago', 'advancePaymentUntil': firebase.firestore.Timestamp.fromDate(nextDueDate) });
-        batch.update(db.collection('advancePaymentRequests').doc(requestId), { status: 'approved', updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        
+        // 1. Registrar transação financeira
+        batch.set(db.collection('transactions').doc(), { 
+            clientId: client.id, 
+            clientName: client.name, 
+            bankId: client.bankId, 
+            bankName: bank.name, 
+            amount: req.finalAmount, 
+            date: firebase.firestore.FieldValue.serverTimestamp() 
+        });
+
+        // 2. Calcular novo vencimento com algoritmo robusto
+        const currentDueDate = new Date(client.payment.dueDate);
+        const today = new Date();
+        today.setHours(12, 0, 0, 0); 
+        const targetDay = currentDueDate.getDate();
+
+        // Determina o ponto de partida (se estiver atrasado, começa de hoje. se estiver em dia, começa do vencimento futuro)
+        let nextDate = new Date(Math.max(today.getTime(), currentDueDate.getTime()));
+        
+        // Adiciona os meses solicitados
+        nextDate.setMonth(nextDate.getMonth() + req.months);
+        
+        // Ajusta para o dia correto do mês (evita pular meses curtos)
+        nextDate.setDate(targetDay);
+        if (nextDate.getDate() !== targetDay) {
+            nextDate.setDate(0); 
+        }
+
+        const nextDueDateISO = nextDate.toISOString();
+
+        // 3. Atualizar cliente
+        batch.update(db.collection('clients').doc(client.id), { 
+            'payment.dueDate': nextDueDateISO, 
+            'payment.status': 'Pago', 
+            'advancePaymentUntil': firebase.firestore.Timestamp.fromDate(nextDate) 
+        });
+
+        // 4. Atualizar status da solicitação
+        batch.update(db.collection('advancePaymentRequests').doc(requestId), { 
+            status: 'approved', 
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+        });
+
         await batch.commit();
     };
     

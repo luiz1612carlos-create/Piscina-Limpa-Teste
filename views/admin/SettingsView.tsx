@@ -816,6 +816,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                             <Input label="Subtítulo (Tela Inicial)" name="mainSubtitle" value={localSettings.mainSubtitle || ''} onChange={(e) => handleSimpleChange(e)} />
                             <Input label="Chave PIX Padrão" name="pixKey" value={localSettings.pixKey} onChange={(e) => handleSimpleChange(e)} />
                             <Input label="Nome do Destinatário PIX (Padrão)" name="pixKeyRecipient" value={localSettings.pixKeyRecipient || ''} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Link de Avaliação Google (Google Review)" name="googleReviewUrl" value={localSettings.googleReviewUrl || ''} onChange={(e) => handleSimpleChange(e)} placeholder="https://g.page/r/sua-empresa/review" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

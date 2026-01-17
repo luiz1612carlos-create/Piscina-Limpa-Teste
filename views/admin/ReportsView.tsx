@@ -109,21 +109,21 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
 
     const clientsWithPendingPayments = useMemo(() => {
         const today = new Date();
-        today.setHours(23, 59, 59, 999);
-        const sevenDaysFromNow = new Date();
-        sevenDaysFromNow.setDate(today.getDate() + 7);
+        today.setHours(0, 0, 0, 0);
+        
+        const limitDate = new Date(today);
+        limitDate.setDate(today.getDate() + 7);
+        limitDate.setHours(23, 59, 59, 999);
 
         return clients.filter(client => {
-            if (!client.payment.dueDate || client.clientStatus !== 'Ativo') return false;
-            const dueDate = new Date(client.payment.dueDate);
+            if (!client.payment.dueDate || client.clientStatus !== 'Ativo' || client.payment.status === 'Pago') return false;
             
-            // É considerado pendente/atrasado se o status NÃO for Pago 
-            // OU se a data de vencimento (início do novo ciclo) já passou.
-            const isNotPaid = client.payment.status !== 'Pago';
-            const isOverdueByDate = dueDate <= today;
-            const isNearDue = dueDate <= sevenDaysFromNow;
+            const dueDate = new Date(client.payment.dueDate);
+            dueDate.setHours(0, 0, 0, 0);
 
-            return isNotPaid || isOverdueByDate || isNearDue;
+            // Regra corrigida: Deve estar vencido (dueDate <= today) 
+            // OU vencer nos próximos 7 dias (dueDate <= limitDate)
+            return dueDate <= limitDate;
         }).sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
     }, [clients]);
 
@@ -211,11 +211,16 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
         const now = new Date();
         now.setHours(23, 59, 59, 999);
 
+        const nextMonth = new Date(now);
+        nextMonth.setDate(now.getDate() + 30);
+
         return clients.filter(c => {
-            if (c.clientStatus !== 'Ativo') return false;
+            if (c.clientStatus !== 'Ativo' || c.payment.status === 'Pago') return false;
             const dueDate = new Date(c.payment.dueDate);
-            // Inclui se o status for pendente OU se a data de vencimento já chegou/passou
-            return (c.payment.status === 'Pendente' || c.payment.status === 'Atrasado' || dueDate <= now);
+            
+            // Na tabela de pendentes, mostramos tudo que não está pago e vence em até 30 dias
+            // para evitar poluir com vencimentos muito distantes de contratos novos.
+            return dueDate <= nextMonth;
         }).sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
     }, [clients]);
 
@@ -320,13 +325,14 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
 
                 {/* Pending Payments List */}
                  <Card>
-                    <CardHeader><h3 className="font-semibold">Inadimplência / Pendentes</h3></CardHeader>
+                    <CardHeader><h3 className="font-semibold">Inadimplência / Pendentes (30 dias)</h3></CardHeader>
                     <CardContent>
                        <DataTable 
                            headers={['Cliente', 'Vencimento', 'Valor']} 
                            data={pendingPayments.map(c => {
                                const dueDate = new Date(c.payment.dueDate);
                                const now = new Date();
+                               now.setHours(0,0,0,0);
                                const isAtrasado = dueDate < now;
                                
                                return [
@@ -368,21 +374,28 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
 
 
             {/* Dues Modal */}
-            <Modal isOpen={isDuesModalOpen} onClose={() => setIsDuesModalOpen(false)} title="Alertas de Vencimento">
+            <Modal isOpen={isDuesModalOpen} onClose={() => setIsDuesModalOpen(false)} title="Alertas de Vencimento (Próximos 7 dias)">
                 <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                    {clientsWithPendingPayments.map(client => (
-                        <div key={client.id} className="flex justify-between items-center p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                            <div>
-                                <p className="font-semibold">{client.name}</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-400">
-                                    Vence em: {new Date(client.payment.dueDate).toLocaleDateString('pt-BR')}
-                                </p>
+                    {clientsWithPendingPayments.map(client => {
+                        const dueDate = new Date(client.payment.dueDate);
+                        const today = new Date();
+                        today.setHours(0,0,0,0);
+                        const isVencido = dueDate < today;
+
+                        return (
+                            <div key={client.id} className="flex justify-between items-center p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                <div>
+                                    <p className="font-semibold">{client.name}</p>
+                                    <p className={`text-sm ${isVencido ? 'text-red-500 font-bold' : 'text-gray-600 dark:text-gray-400'}`}>
+                                        Vencimento: {dueDate.toLocaleDateString('pt-BR')} {isVencido && '(VENCIDO)'}
+                                    </p>
+                                </div>
+                                <Button size="sm" onClick={() => handleOpenWhatsAppModal(client)}>
+                                    Cobrar
+                                </Button>
                             </div>
-                            <Button size="sm" onClick={() => handleOpenWhatsAppModal(client)}>
-                                Cobrar
-                            </Button>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </Modal>
             
@@ -437,7 +450,7 @@ const DataTable = ({ headers, data }: { headers: string[], data: (any)[][] }) =>
                     <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         {row.map((cell, j) => <td key={j} className="p-2 py-3">{cell}</td>)}
                     </tr>
-                )) : <tr><td colSpan={headers.length} className="text-center p-8 text-gray-500">Nenhum dado registrado para este mês.</td></tr>}
+                )) : <tr><td colSpan={headers.length} className="text-center p-8 text-gray-500">Nenhum dado relevante para este período.</td></tr>}
             </tbody>
         </table>
     </div>

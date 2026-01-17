@@ -18,7 +18,7 @@ export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
 export type EmergencyStatus = 'pending' | 'resolved';
 
-export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings';
+export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot';
 
 export interface Address {
     street: string;
@@ -275,6 +275,7 @@ export interface Settings {
     baseAddress: Address;
     pixKey: string;
     pixKeyRecipient?: string;
+    googleReviewUrl?: string;
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
     priceReadjustmentMessageTemplate?: string;
@@ -323,6 +324,12 @@ export interface Settings {
     };
     advancePaymentOptions: AdvancePaymentOption[];
     recessPeriods?: RecessPeriod[];
+    aiBot?: {
+        enabled: boolean;
+        name: string;
+        instructions: string;
+        whatsappAutoReply: boolean;
+    };
 }
 
 export type PricingSettings = Settings['pricing'];
