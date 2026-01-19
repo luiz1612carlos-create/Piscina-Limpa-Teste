@@ -327,8 +327,9 @@ export interface Settings {
     aiBot?: {
         enabled: boolean;
         name: string;
-        instructions: string;
-        whatsappAutoReply: boolean;
+        systemInstructions: string;
+        humanHandoffMessage: string;
+        autoSchedulingEnabled: boolean;
     };
 }
 

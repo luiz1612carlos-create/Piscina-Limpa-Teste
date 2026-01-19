@@ -1,0 +1,26 @@
+// whatsapp.ts
+import fetch from 'node-fetch';
+import * as functions from 'firebase-functions';
+
+const WHATSAPP_TOKEN = functions.config().whatsapp.token;
+const PHONE_ID = functions.config().whatsapp.phone_id;
+
+export async function enviarWhatsApp(numero: string, mensagem: string) {
+  const url = `https://graph.facebook.com/v17.0/${PHONE_ID}/messages`;
+  const body = {
+    messaging_product: "whatsapp",
+    to: numero,
+    text: { body: mensagem }
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${WHATSAPP_TOKEN}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  return res.json();
+}

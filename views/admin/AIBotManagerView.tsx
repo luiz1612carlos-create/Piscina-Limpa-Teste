@@ -1,212 +1,432 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { AppContextType, Settings } from '../../types';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { AppContextType, Settings, Client } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
-import { Spinner } from '../../components/Spinner';
-import { SparklesIcon, CheckBadgeIcon, CopyIcon, UsersIcon } from '../../constants';
-import { GoogleGenAI } from "@google/genai";
+import { ToggleSwitch } from '../../components/ToggleSwitch';
+import { Select } from '../../components/Select';
+// Added ExclamationTriangleIcon to the imports from constants
+import { SparklesIcon, CopyIcon, SettingsIcon, CheckBadgeIcon, UsersIcon, MenuIcon, XMarkIcon, QuestionMarkCircleIcon, ChartBarIcon, ExclamationTriangleIcon } from '../../constants';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface AIBotManagerViewProps {
     appContext: AppContextType;
 }
 
+interface TestMessage {
+    role: 'user' | 'model';
+    text: string;
+    isFunction?: boolean;
+}
+
 const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
     const { settings, updateSettings, showNotification, clients } = appContext;
     const [isSaving, setIsSaving] = useState(false);
-    const [isSimulating, setIsSimulating] = useState(false);
-    const [chatHistory, setChatHistory] = useState<{role: 'user' | 'bot', text: string}[]>([]);
-    const [userInput, setUserInput] = useState('');
-
-    const [botConfig, setBotConfig] = useState(settings?.aiBot || {
-        enabled: true,
-        name: 'SOS Piscina Bot',
-        instructions: 'Você é o assistente virtual da S.O.S Piscina Limpa. Seja educado e direto. Use emojis de piscina e água.',
-        whatsappAutoReply: true
+    const [activeTab, setActiveTab] = useState<'config' | 'test' | 'guide'>('config');
+    
+    // Config State
+    const [localBotSettings, setLocalBotSettings] = useState<Settings['aiBot']>({
+        enabled: false,
+        name: 'SOS Bot',
+        systemInstructions: '',
+        humanHandoffMessage: 'Aguarde um instante, estou chamando um atendente humano para você!',
+        autoSchedulingEnabled: true
     });
 
-    const systemPrompt = useMemo(() => {
-        if (!settings) return '';
-        
-        const tiers = settings.pricing.volumeTiers.map(t => `- De ${t.min} a ${t.max} Litros: R$ ${t.price}`).join('\n');
-        const activeClients = clients.filter(c => c.clientStatus === 'Ativo');
-        
-        return `
-        PERSONA: ${botConfig.name}.
-        CONTEXTO: Assistente de atendimento da empresa ${settings.companyName}.
-        INSTRUÇÕES ADICIONAIS: ${botConfig.instructions}
-        
-        REGRAS DE NEGÓCIO (TABELA ATUAL):
-        ${tiers}
-        - Taxa Água de Poço: R$ ${settings.pricing.wellWaterFee}
-        - Taxa Piscina de Festa: R$ ${settings.pricing.partyPoolFee}
-        - Valor por KM excedente (Raio > ${settings.pricing.serviceRadius}km): R$ ${settings.pricing.perKm}
-        
-        DADOS DE CLIENTES ATIVOS (Para consultas):
-        ${activeClients.map(c => `- ${c.name}, Vencimento: ${c.payment.dueDate.split('T')[0]}, Status: ${c.payment.status}, Plano: ${c.plan}`).join('\n')}
-        
-        TAREFAS:
-        1. Se o cliente pedir orçamento, pergunte as medidas (largura, comprimento, profundidade) ou o volume em litros.
-        2. Se ele informar as medidas, calcule o volume (C x L x P * 1000) e dê o preço mensal base conforme a tabela.
-        3. Se for um cliente ativo perguntando de vencimento, informe a data baseada nos dados acima.
-        4. SEMPRE responda de forma curta e amigável.
-        5. Se não souber algo, peça para falar com um humano.
-        `.trim();
-    }, [settings, botConfig, clients]);
+    // Test Simulator State
+    const [testMessages, setTestMessages] = useState<TestMessage[]>([]);
+    const [inputMessage, setInputMessage] = useState('');
+    const [selectedClientToSimulate, setSelectedClientToSimulate] = useState<string>('visitor');
+    const [isThinking, setIsThinking] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement>(null);
 
-    const handleSaveConfig = async () => {
+    useEffect(() => {
+        if (settings?.aiBot) {
+            setLocalBotSettings(settings.aiBot);
+        }
+    }, [settings]);
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [testMessages, isThinking]);
+
+    const handleSave = async () => {
         setIsSaving(true);
         try {
-            await updateSettings({ aiBot: botConfig });
-            showNotification('Configurações do robô salvas!', 'success');
+            await updateSettings({ aiBot: localBotSettings });
+            showNotification('Configurações do Robô atualizadas!', 'success');
         } catch (error) {
-            showNotification('Erro ao salvar.', 'error');
+            showNotification('Erro ao salvar configurações.', 'error');
         } finally {
-            setIsSaving(true);
-            setTimeout(() => setIsSaving(false), 500);
+            setIsSaving(false);
         }
     };
 
-    const handleSendMessage = async () => {
-        if (!userInput.trim() || isSimulating) return;
+    const handleSendMessage = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!inputMessage.trim() || isThinking) return;
 
-        const newMsg = { role: 'user' as const, text: userInput };
-        setChatHistory(prev => [...prev, newMsg]);
-        setUserInput('');
-        setIsSimulating(true);
+        const userMsg = inputMessage;
+        setInputMessage('');
+        setTestMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+        setIsThinking(true);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const model = 'gemini-3-flash-preview';
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
             
-            const contents = [
-                { role: 'user', parts: [{ text: systemPrompt }] },
-                ...chatHistory.map(h => ({ role: h.role === 'bot' ? 'model' : 'user', parts: [{ text: h.text }] })),
-                { role: 'user', parts: [{ text: userInput }] }
-            ];
+            const client = selectedClientToSimulate === 'visitor' 
+                ? null 
+                : clients.find(c => c.id === selectedClientToSimulate);
+
+            const tools = [{
+                functionDeclarations: [
+                    {
+                        name: 'agendar_festa_piscina',
+                        description: 'Registra um evento de uso da piscina.',
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                data: { type: Type.STRING },
+                                motivo: { type: Type.STRING }
+                            },
+                            required: ['data']
+                        }
+                    },
+                    {
+                        name: 'chamar_atendente',
+                        description: 'Transfere para humano.',
+                        parameters: { type: Type.OBJECT, properties: { razao: { type: Type.STRING } } }
+                    }
+                ]
+            }];
+
+            const systemInstruction = `
+                VOCÊ: ${localBotSettings.name} 🌊.
+                REGRAS DO ADMIN: ${localBotSettings.systemInstructions}
+                
+                CONTEXTO SIMULADO:
+                - Nome: ${client?.name || "Visitante"}
+                - Status: ${client ? 'CLIENTE CADASTRADO' : 'NÃO CADASTRADO'}
+                - Vencimento: ${client?.payment?.dueDate ? new Date(client.payment.dueDate).toLocaleDateString('pt-BR') : 'Sem dados'}
+                
+                TABELA DE PREÇOS ATUAL:
+                ${JSON.stringify(settings?.pricing?.volumeTiers || [])}
+            `;
 
             const response = await ai.models.generateContent({
-                model,
-                contents: contents as any,
-                config: { temperature: 0.7 }
+                model: "gemini-3-flash-preview",
+                contents: [{ role: "user", parts: [{ text: userMsg }] }],
+                config: { systemInstruction, tools },
             });
 
-            const botText = response.text || "Desculpe, tive um erro ao processar.";
-            setChatHistory(prev => [...prev, { role: 'bot', text: botText }]);
+            if (response.functionCalls) {
+                for (const fc of response.functionCalls) {
+                    setTestMessages(prev => [...prev, { 
+                        role: 'model', 
+                        text: `[SISTEMA] IA tentou executar: ${fc.name}(${JSON.stringify(fc.args)})`,
+                        isFunction: true 
+                    }]);
+                }
+            }
+
+            setTestMessages(prev => [...prev, { role: 'model', text: response.text || "Sem resposta textual." }]);
+
         } catch (error) {
-            setChatHistory(prev => [...prev, { role: 'bot', text: "Erro na conexão com a Inteligência Artificial." }]);
+            setTestMessages(prev => [...prev, { role: 'model', text: "Erro ao processar mensagem no simulador." }]);
         } finally {
-            setIsSimulating(false);
+            setIsThinking(false);
         }
     };
 
-    const copyPrompt = () => {
-        navigator.clipboard.writeText(systemPrompt);
-        showNotification('Instruções copiadas para a área de transferência!', 'info');
+    const webhookUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/api/whatsapp` 
+        : 'https://seu-site.vercel.app/api/whatsapp';
+
+    const promptLength = localBotSettings.systemInstructions.length;
+    const getPromptStatus = () => {
+        if (promptLength < 100) return { label: 'Muito Curto', color: 'text-yellow-500' };
+        if (promptLength < 2000) return { label: 'Excelente', color: 'text-green-500' };
+        return { label: 'Complexo (Pode perder foco)', color: 'text-blue-500' };
     };
 
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-black text-purple-600 flex items-center gap-3">
-                    <SparklesIcon className="w-10 h-10" />
-                    Robô Inteligente (WhatsApp/Chat)
-                </h2>
-                <Button onClick={handleSaveConfig} isLoading={isSaving}>Salvar Configurações</Button>
-            </div>
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h2 className="text-3xl font-black text-purple-600 flex items-center gap-3">
+                        <SparklesIcon className="w-10 h-10" />
+                        Gerenciador do Robô IA
+                    </h2>
+                    <p className="text-gray-500">Configure e teste a inteligência do seu WhatsApp.</p>
+                </div>
+                <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
+                    <button 
+                        onClick={() => setActiveTab('config')}
+                        className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'config' ? 'bg-white dark:bg-gray-700 shadow text-purple-600' : 'text-gray-500'}`}
+                    >
+                        Configuração
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('test')}
+                        className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'test' ? 'bg-white dark:bg-gray-700 shadow text-purple-600' : 'text-gray-500'}`}
+                    >
+                        Testar Robô
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('guide')}
+                        className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'guide' ? 'bg-white dark:bg-gray-700 shadow text-purple-600' : 'text-gray-500'}`}
+                    >
+                        Guia de Setup
+                    </button>
+                </div>
+            </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Configurações do Bot */}
-                <div className="space-y-6">
-                    <Card>
-                        <CardHeader><h3 className="font-bold">Personalidade do Assistente</h3></CardHeader>
-                        <CardContent className="space-y-4">
-                            <Input 
-                                label="Nome do Robô" 
-                                value={botConfig.name} 
-                                onChange={e => setBotConfig({...botConfig, name: e.target.value})} 
-                            />
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Instruções de Comportamento</label>
-                                <textarea 
-                                    className="w-full p-3 border rounded-md dark:bg-gray-900 dark:border-gray-700 text-sm h-32"
-                                    value={botConfig.instructions}
-                                    onChange={e => setBotConfig({...botConfig, instructions: e.target.value})}
-                                    placeholder="Ex: Seja muito formal, use o nome do cliente..."
+            {activeTab === 'config' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+                    <div className="lg:col-span-2 space-y-6">
+                        <Card className="border-l-8 border-purple-500 shadow-xl">
+                            <CardHeader className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <SettingsIcon className="w-5 h-5 text-purple-600"/> 
+                                    <h3 className="font-bold">Cérebro e Comportamento</h3>
+                                </div>
+                                <Button onClick={handleSave} isLoading={isSaving} size="sm">Salvar Alterações</Button>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <Input 
+                                        label="Nome de Exibição da IA" 
+                                        value={localBotSettings?.name || ''} 
+                                        onChange={e => setLocalBotSettings(prev => ({...prev!, name: e.target.value}))}
+                                        placeholder="Ex: Amanda da Piscina"
+                                    />
+                                    <div className="pt-7">
+                                        <ToggleSwitch 
+                                            label="Robô Ativo no WhatsApp" 
+                                            enabled={localBotSettings?.enabled || false} 
+                                            onChange={val => setLocalBotSettings(prev => ({...prev!, enabled: val}))}
+                                        />
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <div className="flex justify-between items-end mb-1">
+                                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">
+                                            Instruções Mestres (Prompts do Sistema)
+                                        </label>
+                                        <span className={`text-[10px] font-black uppercase ${getPromptStatus().color}`}>
+                                            {getPromptStatus().label} | {promptLength} caracteres
+                                        </span>
+                                    </div>
+                                    <textarea 
+                                        className="w-full p-4 border rounded-xl bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700 h-80 focus:ring-2 focus:ring-purple-500 outline-none font-mono text-sm leading-relaxed"
+                                        value={localBotSettings?.systemInstructions || ''}
+                                        onChange={e => setLocalBotSettings(prev => ({...prev!, systemInstructions: e.target.value}))}
+                                        placeholder="Descreva aqui todas as regras. Ex: 'Seja sempre cordial. Se perguntarem preço, use a tabela. Se for problema técnico, chame um humano...'"
+                                    />
+                                    <p className="text-[10px] text-gray-500 mt-2 italic">Dica: Use frases curtas e diretas para garantir que a IA não ignore nenhuma regra importante.</p>
+                                </div>
+
+                                <Input 
+                                    label="Frase de Transbordo (Humano)" 
+                                    value={localBotSettings?.humanHandoffMessage || ''} 
+                                    onChange={e => setLocalBotSettings(prev => ({...prev!, humanHandoffMessage: e.target.value}))}
+                                    placeholder="O que o robô diz antes de parar de responder..."
                                 />
-                            </div>
-                        </CardContent>
-                    </Card>
 
-                    <Card className="bg-purple-50 dark:bg-purple-900/10 border-purple-200">
-                        <CardHeader className="flex justify-between items-center">
-                            <h3 className="font-bold text-purple-800 dark:text-purple-300">Prompt do Sistema (Lógica de Orçamento)</h3>
-                            <Button size="sm" variant="secondary" onClick={copyPrompt}>
-                                <CopyIcon className="w-4 h-4 mr-1" /> Copiar
-                            </Button>
+                                <div className="p-4 bg-purple-50 dark:bg-purple-900/10 rounded-xl border border-purple-100 dark:border-purple-900/30">
+                                    <ToggleSwitch 
+                                        label="IA pode criar agendamentos no seu calendário" 
+                                        enabled={localBotSettings?.autoSchedulingEnabled || false} 
+                                        onChange={val => setLocalBotSettings(prev => ({...prev!, autoSchedulingEnabled: val}))}
+                                    />
+                                    <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-2 font-medium">Se ativado, quando o cliente disser que quer usar a piscina em tal data, a IA criará o evento automaticamente na aba "Eventos".</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <div className="space-y-6">
+                        <Card className="bg-gray-900 text-white border-none shadow-2xl">
+                            <CardHeader className="border-gray-800">
+                                <h3 className="font-bold text-purple-400 flex items-center gap-2">
+                                    <ChartBarIcon className="w-5 h-5"/> Saúde da Integração
+                                </h3>
+                            </CardHeader>
+                            <CardContent className="space-y-4">
+                                <div>
+                                    <p className="text-[10px] text-gray-400 uppercase font-black mb-1">Status do Webhook:</p>
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                        <span className="text-xs font-bold text-green-400">Endpoint Online</span>
+                                    </div>
+                                </div>
+                                <div className="pt-2">
+                                    <p className="text-[10px] text-gray-400 uppercase font-black mb-1">URL da API (Meta):</p>
+                                    <div className="flex gap-2">
+                                        <code className="bg-black p-2 rounded text-[10px] break-all flex-1 border border-gray-800 text-purple-300">{webhookUrl}</code>
+                                        <button onClick={() => {navigator.clipboard.writeText(webhookUrl); showNotification('URL Copiada!', 'info')}} className="text-purple-400 hover:text-white transition-colors">
+                                            <CopyIcon className="w-5 h-5"/>
+                                        </button>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+                        
+                        <Card>
+                            <CardHeader><h3 className="font-bold flex items-center gap-2"><SparklesIcon className="w-5 h-5 text-purple-600"/> Dicas de Mestre</h3></CardHeader>
+                            <CardContent className="text-sm space-y-4 text-gray-600 dark:text-gray-400">
+                                <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                    <p className="font-bold text-gray-800 dark:text-gray-200 text-xs mb-1">Use Variáveis:</p>
+                                    <p className="text-[11px]">Você não precisa ensinar o nome de cada cliente. O sistema já injeta automaticamente o nome e o status do cliente em cada conversa.</p>
+                                </div>
+                                <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                    <p className="font-bold text-gray-800 dark:text-gray-200 text-xs mb-1">Limite de Aprendizado:</p>
+                                    <p className="text-[11px]">A IA "aprende" as regras instantaneamente. Se você quer que ela mude o jeito de falar, basta mudar as instruções aqui e salvar.</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'test' && (
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-fade-in max-h-[800px]">
+                    <div className="lg:col-span-1 space-y-4">
+                        <Card>
+                            <CardHeader><h3 className="font-bold">Laboratório de Testes</h3></CardHeader>
+                            <CardContent className="space-y-4">
+                                <Select 
+                                    label="Simular como se eu fosse:"
+                                    value={selectedClientToSimulate}
+                                    onChange={e => setSelectedClientToSimulate(e.target.value)}
+                                    options={[
+                                        { value: 'visitor', label: '👤 Pessoa Nova (Visitante)' },
+                                        ...clients.filter(c => c.clientStatus === 'Ativo').map(c => ({ value: c.id, label: `✅ Cliente: ${c.name}` }))
+                                    ]}
+                                />
+                                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-[11px] text-blue-600 leading-relaxed">
+                                    <p className="font-bold mb-1">O que acontece aqui?</p>
+                                    Ao testar, a IA recebe as instruções que você escreveu na aba anterior + os dados reais do cliente selecionado.
+                                </div>
+                                <Button variant="secondary" size="sm" className="w-full" onClick={() => setTestMessages([])}>Limpar Conversa</Button>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <Card className="lg:col-span-3 flex flex-col shadow-2xl h-[600px] border-none overflow-hidden rounded-2xl">
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 dark:bg-gray-950 no-scrollbar">
+                            {testMessages.length === 0 && (
+                                <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-50">
+                                    <SparklesIcon className="w-12 h-12 mb-2 animate-pulse" />
+                                    <p className="font-bold">O Robô está pronto. Diga 'Olá'!</p>
+                                </div>
+                            )}
+                            {testMessages.map((msg, idx) => (
+                                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[85%] p-4 rounded-2xl text-sm shadow-sm ${
+                                        msg.role === 'user' 
+                                            ? 'bg-purple-600 text-white rounded-tr-none' 
+                                            : msg.isFunction 
+                                                ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 font-mono text-[10px] italic'
+                                                : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-tl-none border dark:border-gray-700'
+                                    }`}>
+                                        {msg.text}
+                                    </div>
+                                </div>
+                            ))}
+                            {isThinking && (
+                                <div className="flex justify-start">
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl rounded-tl-none shadow-sm flex gap-1">
+                                        <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"></div>
+                                        <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                                        <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={chatEndRef} />
+                        </div>
+                        <form onSubmit={handleSendMessage} className="p-4 bg-white dark:bg-gray-900 border-t dark:border-gray-800 flex gap-2">
+                            <input 
+                                className="flex-1 bg-gray-100 dark:bg-gray-800 border-none rounded-full px-6 py-3 focus:ring-2 focus:ring-purple-500 outline-none text-sm transition-all"
+                                placeholder="Envie uma pergunta difícil para testar o cérebro da IA..."
+                                value={inputMessage}
+                                onChange={e => setInputMessage(e.target.value)}
+                                disabled={isThinking}
+                            />
+                            <button 
+                                type="submit"
+                                disabled={isThinking || !inputMessage.trim()}
+                                className="bg-purple-600 hover:bg-purple-700 text-white p-3 rounded-full disabled:opacity-50 transition-all shadow-lg shadow-purple-500/20 active:scale-95"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                            </button>
+                        </form>
+                    </Card>
+                </div>
+            )}
+
+            {activeTab === 'guide' && (
+                <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-10">
+                    <Card className="border-t-4 border-blue-500 shadow-lg">
+                        <CardHeader>
+                            <h3 className="text-xl font-black flex items-center gap-2">
+                                <QuestionMarkCircleIcon className="w-6 h-6 text-blue-500" />
+                                Como Conectar ao WhatsApp (Meta Cloud API)
+                            </h3>
                         </CardHeader>
-                        <CardContent>
-                            <p className="text-xs text-purple-700 dark:text-purple-400 mb-4">
-                                Esta é a "inteligência" que você deve colar na sua ferramenta de WhatsApp (Typebot, n8n, etc). Ela contém seus preços e dados atuais.
-                            </p>
-                            <div className="max-h-64 overflow-y-auto p-3 bg-white dark:bg-gray-950 rounded border text-[10px] font-mono whitespace-pre-wrap">
-                                {systemPrompt}
+                        <CardContent className="space-y-8 p-6">
+                            <div className="space-y-6">
+                                <div className="flex gap-4">
+                                    <div className="bg-blue-600 text-white font-black rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0 shadow-md">1</div>
+                                    <div>
+                                        <p className="font-bold text-gray-800 dark:text-gray-100">Crie seu App no Facebook Developers</p>
+                                        <p className="text-sm text-gray-500 mt-1">Acesse <a href="https://developers.facebook.com" target="_blank" className="text-blue-500 underline font-bold">developers.facebook.com</a>, crie um App do tipo "Empresa" e adicione o produto "WhatsApp".</p>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <div className="bg-blue-600 text-white font-black rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0 shadow-md">2</div>
+                                    <div>
+                                        <p className="font-bold text-gray-800 dark:text-gray-100">Configure o Webhook</p>
+                                        <p className="text-sm text-gray-500 mt-1">No menu esquerdo, vá em <strong>WhatsApp > Configuração</strong>. Clique em "Editar" Webhook e use os dados abaixo:</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-800 ml-12 shadow-inner">
+                                    <div className="space-y-5">
+                                        <div>
+                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Callback URL (URL de Retorno):</p>
+                                            <p className="text-xs font-mono bg-white dark:bg-black p-3 rounded-lg border dark:border-gray-700 break-all shadow-sm text-purple-600 dark:text-purple-400">{webhookUrl}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Verify Token (Token de Verificação):</p>
+                                            <p className="text-xs font-mono bg-white dark:bg-black p-3 rounded-lg border dark:border-gray-700 shadow-sm font-bold">whatsapp_verify_123</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4">
+                                    <div className="bg-blue-600 text-white font-black rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0 shadow-md">3</div>
+                                    <div>
+                                        <p className="font-bold text-gray-800 dark:text-gray-100">Assine as Mensagens</p>
+                                        <p className="text-sm text-gray-500 mt-1">Clique em <strong>Gerenciar Webhooks</strong> e clique em "Assinar" para o campo <strong>messages</strong>. Isso é o que faz o Facebook enviar os textos para sua IA.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="mt-8 p-5 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 rounded-xl text-sm text-amber-800 dark:text-amber-200 flex gap-3">
+                                <ExclamationTriangleIcon className="w-6 h-6 flex-shrink-0 text-amber-600" />
+                                <div>
+                                    <p className="font-black uppercase tracking-wider text-xs mb-1">Lembrete de Produção:</p>
+                                    <p className="leading-relaxed">Certifique-se de que o App da Meta esteja em modo "Live" (Ao vivo) e que o seu nível de WhatsApp de teste esteja verificado.</p>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
                 </div>
-
-                {/* Simulador de Chat */}
-                <Card className="flex flex-col h-[700px]">
-                    <CardHeader className="bg-gray-50 dark:bg-gray-800 flex justify-between items-center">
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></div>
-                            <h3 className="font-bold">Simulador de Atendimento</h3>
-                        </div>
-                        <button onClick={() => setChatHistory([])} className="text-xs text-red-500 font-bold uppercase">Limpar Chat</button>
-                    </CardHeader>
-                    <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#e5ddd5] dark:bg-gray-950/50">
-                        {chatHistory.length === 0 && (
-                            <div className="text-center py-10">
-                                <SparklesIcon className="w-12 h-12 mx-auto text-purple-300" />
-                                <p className="text-gray-500 text-sm mt-2">Envie um oi para testar o orçamento automático.</p>
-                            </div>
-                        )}
-                        {chatHistory.map((msg, i) => (
-                            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[80%] p-3 rounded-lg shadow-sm text-sm ${
-                                    msg.role === 'user' 
-                                    ? 'bg-[#dcf8c6] dark:bg-primary-900 text-gray-900 dark:text-white rounded-tr-none' 
-                                    : 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-tl-none'
-                                }`}>
-                                    {msg.text}
-                                </div>
-                            </div>
-                        ))}
-                        {isSimulating && (
-                            <div className="flex justify-start">
-                                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm">
-                                    <Spinner size="sm" />
-                                </div>
-                            </div>
-                        )}
-                    </CardContent>
-                    <div className="p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-800">
-                        <form onSubmit={e => { e.preventDefault(); handleSendMessage(); }} className="flex gap-2">
-                            <input 
-                                type="text"
-                                className="flex-1 p-2 border rounded-full px-4 focus:ring-2 focus:ring-purple-500 dark:bg-gray-900 dark:border-gray-700 outline-none"
-                                placeholder="Digite como se fosse o cliente..."
-                                value={userInput}
-                                onChange={e => setUserInput(e.target.value)}
-                            />
-                            <Button className="rounded-full !p-2" type="submit" disabled={isSimulating}>
-                                <svg className="w-6 h-6 rotate-90" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path></svg>
-                            </Button>
-                        </form>
-                    </div>
-                </Card>
-            </div>
+            )}
         </div>
     );
 };

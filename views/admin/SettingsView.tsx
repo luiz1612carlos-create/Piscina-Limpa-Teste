@@ -1161,6 +1161,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                 </div>
             </div>
             
+            {/* Version Indicator */}
+            <div className="mt-8 pt-4 border-t dark:border-gray-800 text-center">
+                <p className="text-[10px] text-gray-400 uppercase tracking-widest font-black">
+                    Piscina Limpa v31.0 - Build: {new Date().toLocaleDateString()}
+                </p>
+            </div>
+
             {isPriceChangeModalOpen && (
                 <Modal
                     isOpen={isPriceChangeModalOpen}

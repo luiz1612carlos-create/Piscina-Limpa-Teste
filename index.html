@@ -58,7 +58,8 @@
     "react": "https://aistudiocdn.com/react@^19.2.1",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.35.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0"
   }
 }
 </script>
@@ -90,6 +91,20 @@
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register("./sw.js").then(reg => {
                     console.log('SW registered');
+                    
+                    // Lógica para detectar atualização de código
+                    reg.onupdatefound = () => {
+                        const installingWorker = reg.installing;
+                        installingWorker.onstatechange = () => {
+                            if (installingWorker.state === 'installed') {
+                                if (navigator.serviceWorker.controller) {
+                                    // Nova versão disponível! 
+                                    console.log('Nova versão detectada, recarregando...');
+                                    window.location.reload();
+                                }
+                            }
+                        };
+                    };
                 }).catch(err => console.log('SW failed', err));
             });
         }
