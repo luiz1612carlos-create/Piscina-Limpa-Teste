@@ -87,27 +87,80 @@
     <script type="module" src="index.tsx"></script>
     
     <script>
-        if ("serviceWorker" in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register("./sw.js").then(reg => {
-                    console.log('SW registered');
+        (function() {
+            const CURRENT_VERSION = '39';
+            const storedVersion = localStorage.getItem('piscina_version');
+            
+            if (storedVersion !== CURRENT_VERSION) {
+                console.warn('[App] Nova versão detectada (v' + CURRENT_VERSION + '). Forçando limpeza total...');
+                
+                const clearData = async () => {
+                    // Limpa todos os caches nomeados
+                    if ('caches' in window) {
+                        try {
+                            const keys = await caches.keys();
+                            await Promise.all(keys.map(key => caches.delete(key)));
+                        } catch (e) {}
+                    }
                     
-                    // Lógica para detectar atualização de código
-                    reg.onupdatefound = () => {
-                        const installingWorker = reg.installing;
+                    // Limpa Service Workers
+                    if ('serviceWorker' in navigator) {
+                        try {
+                            const registrations = await navigator.serviceWorker.getRegistrations();
+                            await Promise.all(registrations.map(r => r.unregister()));
+                        } catch (e) {}
+                    }
+
+                    localStorage.clear();
+                    localStorage.setItem('piscina_version', CURRENT_VERSION);
+                    
+                    // Reload forçado
+                    window.location.reload();
+                };
+
+                clearData();
+                return;
+            }
+
+            // Registro do Service Worker corrigido
+            async function registerSW() {
+                if (!("serviceWorker" in navigator)) return;
+
+                try {
+                    // Evita registrar se o documento ainda não estiver pronto
+                    if (document.readyState === 'uninitialized') return;
+
+                    // Construção manual da string de URL para evitar erros do construtor URL em certos ambientes
+                    const swPath = 'sw.js?v=' + CURRENT_VERSION + '&t=' + Date.now();
+
+                    const registration = await navigator.serviceWorker.register(swPath, { scope: './' });
+                    
+                    registration.onupdatefound = () => {
+                        const installingWorker = registration.installing;
+                        if (!installingWorker) return;
+                        
                         installingWorker.onstatechange = () => {
-                            if (installingWorker.state === 'installed') {
-                                if (navigator.serviceWorker.controller) {
-                                    // Nova versão disponível! 
-                                    console.log('Nova versão detectada, recarregando...');
-                                    window.location.reload();
-                                }
+                            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                console.log('[SW] Nova versão pronta. Recarregando...');
+                                window.location.reload();
                             }
                         };
                     };
-                }).catch(err => console.log('SW failed', err));
-            });
-        }
+                } catch (err) {
+                    // Ignora erros irrelevantes de segurança em ambientes de desenvolvimento local
+                    if (err.name !== 'InvalidStateError' && err.name !== 'SecurityError') {
+                        console.error('[SW] Erro no registro:', err);
+                    }
+                }
+            }
+
+            // Garante o registro após o carregamento total
+            if (document.readyState === 'complete') {
+                registerSW();
+            } else {
+                window.addEventListener('load', registerSW);
+            }
+        })();
     </script>
 <script type="module" src="/index.tsx"></script>
 </body>

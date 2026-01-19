@@ -1,31 +1,29 @@
 
-const CACHE_NAME = "piscina-limpa-v31"; // Incrementado de v30 para v31
+const CACHE_NAME = "piscina-limpa-v39";
 
 const APP_SHELL_FILES = [
-  './',
   './index.html',
   './manifest.json',
   './styles.css'
 ];
 
 self.addEventListener("install", event => {
-  console.log(`SW Install: Caching App Shell ${CACHE_NAME}`);
+  console.log(`[SW v39] Instalando...`);
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll(APP_SHELL_FILES);
     })
   );
-  // Força o Service Worker a se tornar ativo imediatamente
   self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {
+  console.log("[SW v39] Ativando e limpando caches antigos...");
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
         keys.map(key => {
           if (key !== CACHE_NAME) {
-            console.log("SW: Removendo cache antigo", key);
             return caches.delete(key);
           }
         })
@@ -36,27 +34,36 @@ self.addEventListener("activate", event => {
 });
 
 self.addEventListener("fetch", event => {
-    const requestUrl = new URL(event.request.url);
+  const requestUrl = new URL(event.request.url);
 
-    // Ignorar requisições externas críticas
-    if (requestUrl.hostname.endsWith('googleapis.com') ||
-        requestUrl.hostname.endsWith('gstatic.com') ||
-        requestUrl.hostname.includes('firebase')) {
-        return;
-    }
+  // Não cacheia chamadas de API ou Firebase
+  if (
+    requestUrl.hostname.includes('googleapis.com') ||
+    requestUrl.hostname.includes('gstatic.com') ||
+    requestUrl.hostname.includes('firebase') ||
+    requestUrl.pathname.includes('/api/')
+  ) {
+    return;
+  }
 
-    if (event.request.mode === 'navigate') {
-        event.respondWith(
-            fetch(event.request).catch(() => {
-                return caches.match('./index.html') || caches.match('index.html');
-            })
-        );
-        return;
-    }
-
+  // Estratégia Network First para navegação para garantir index.html sempre novo
+  if (event.request.mode === 'navigate') {
     event.respondWith(
-        caches.match(event.request).then(response => {
-            return response || fetch(event.request);
+      fetch(event.request)
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+          return response;
         })
+        .catch(() => caches.match('./index.html'))
     );
+    return;
+  }
+
+  // Cache First para outros recursos
+  event.respondWith(
+    caches.match(event.request).then(response => {
+      return response || fetch(event.request);
+    })
+  );
 });
