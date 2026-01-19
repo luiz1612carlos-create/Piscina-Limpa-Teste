@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import * as admin from 'firebase-admin';
 
@@ -72,7 +71,6 @@ export default async function handler(req: any, res: any) {
         ]
       }];
 
-      // Montamos as instruções baseadas no que o Admin escreveu no painel
       const systemInstruction = `
         VOCÊ: ${aiSettings.name || 'Assistente SOS Piscina'} 🌊.
         PERSONALIDADE E REGRAS: ${aiSettings.systemInstructions}
@@ -98,7 +96,6 @@ export default async function handler(req: any, res: any) {
 
       let finalReply = response.text || "";
 
-      // 4. EXECUTAR FUNÇÕES E CUSTOMIZAR RESPOSTA
       if (response.functionCalls) {
         for (const fc of response.functionCalls) {
           if (fc.name === 'agendar_festa_piscina' && client && aiSettings.autoSchedulingEnabled) {
@@ -122,7 +119,6 @@ export default async function handler(req: any, res: any) {
 
       if (!finalReply) finalReply = "Poderia repetir? Não consegui processar sua mensagem agora. 🌊";
 
-      // 5. ENVIAR PARA WHATSAPP
       await fetch(
         `https://graph.facebook.com/v23.0/911056812090553/messages`,
         {

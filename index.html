@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR" class="h-full dark">
 <head>
@@ -59,7 +58,10 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "react/": "https://aistudiocdn.com/react@^19.2.1/",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0"
+    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0",
+    "path": "https://esm.sh/path@^0.12.7",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
@@ -70,13 +72,14 @@
 
     <script>
       window.firebaseConfig = {
-        apiKey: "AIzaSyAGcNaVkzxTdzsR10RSsgHH56M6yGcVH0Y",
-        authDomain: "sos-piscinalimpa-56349.firebaseapp.com",
-        projectId: "sos-piscinalimpa-56349",
-        storageBucket: "sos-piscinalimpa-56349.firebasestorage.app",
-        messagingSenderId: "381700700922",
-        appId: "1:381700700922:web:bf89b0e0ffbb7a1b576743"
-      };
+  apiKey: "AIzaSyAGcNaVkzxTdzsR10RSsgHH56M6yGcVH0Y",
+  authDomain: "sos-piscinalimpa-56349.firebaseapp.com",
+  projectId: "sos-piscinalimpa-56349",
+  storageBucket: "sos-piscinalimpa-56349.firebasestorage.app",
+  messagingSenderId: "381700700922",
+  appId: "1:381700700922:web:bf89b0e0ffbb7a1b576743"
+};
+
     </script>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -84,18 +87,18 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
-    <script type="module" src="index.tsx"></script>
+    <!-- Usando caminho relativo explícito para evitar confusão com /src/main.tsx -->
+    <script type="module" src="./index.tsx"></script>
     
     <script>
         (function() {
-            const CURRENT_VERSION = '39';
+            const CURRENT_VERSION = '41';
             const storedVersion = localStorage.getItem('piscina_version');
             
             if (storedVersion !== CURRENT_VERSION) {
                 console.warn('[App] Nova versão detectada (v' + CURRENT_VERSION + '). Forçando limpeza total...');
                 
                 const clearData = async () => {
-                    // Limpa todos os caches nomeados
                     if ('caches' in window) {
                         try {
                             const keys = await caches.keys();
@@ -103,7 +106,6 @@
                         } catch (e) {}
                     }
                     
-                    // Limpa Service Workers
                     if ('serviceWorker' in navigator) {
                         try {
                             const registrations = await navigator.serviceWorker.getRegistrations();
@@ -113,8 +115,6 @@
 
                     localStorage.clear();
                     localStorage.setItem('piscina_version', CURRENT_VERSION);
-                    
-                    // Reload forçado
                     window.location.reload();
                 };
 
@@ -122,17 +122,12 @@
                 return;
             }
 
-            // Registro do Service Worker corrigido
             async function registerSW() {
                 if (!("serviceWorker" in navigator)) return;
 
                 try {
-                    // Evita registrar se o documento ainda não estiver pronto
                     if (document.readyState === 'uninitialized') return;
-
-                    // Construção manual da string de URL para evitar erros do construtor URL em certos ambientes
                     const swPath = 'sw.js?v=' + CURRENT_VERSION + '&t=' + Date.now();
-
                     const registration = await navigator.serviceWorker.register(swPath, { scope: './' });
                     
                     registration.onupdatefound = () => {
@@ -147,14 +142,12 @@
                         };
                     };
                 } catch (err) {
-                    // Ignora erros irrelevantes de segurança em ambientes de desenvolvimento local
                     if (err.name !== 'InvalidStateError' && err.name !== 'SecurityError') {
                         console.error('[SW] Erro no registro:', err);
                     }
                 }
             }
 
-            // Garante o registro após o carregamento total
             if (document.readyState === 'complete') {
                 registerSW();
             } else {

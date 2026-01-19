@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { AppContextType, Settings, Client } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -6,7 +5,6 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { ToggleSwitch } from '../../components/ToggleSwitch';
 import { Select } from '../../components/Select';
-// Added ExclamationTriangleIcon to the imports from constants
 import { SparklesIcon, CopyIcon, SettingsIcon, CheckBadgeIcon, UsersIcon, MenuIcon, XMarkIcon, QuestionMarkCircleIcon, ChartBarIcon, ExclamationTriangleIcon } from '../../constants';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -139,9 +137,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
         }
     };
 
-    const webhookUrl = typeof window !== 'undefined' 
-        ? `${window.location.origin}/api/whatsapp` 
-        : 'https://seu-site.vercel.app/api/whatsapp';
+    const webhookUrl = 'https://whatsapp-bot-drab-nu.vercel.app/api/whatsapp';
 
     const promptLength = localBotSettings.systemInstructions.length;
     const getPromptStatus = () => {
@@ -263,13 +259,16 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     </div>
                                 </div>
                                 <div className="pt-2">
-                                    <p className="text-[10px] text-gray-400 uppercase font-black mb-1">URL da API (Meta):</p>
+                                    <p className="text-[10px] text-gray-400 uppercase font-black mb-1">URL DO WEBHOOK:</p>
                                     <div className="flex gap-2">
-                                        <code className="bg-black p-2 rounded text-[10px] break-all flex-1 border border-gray-800 text-purple-300">{webhookUrl}</code>
+                                        <code className="bg-black p-2 rounded text-[10px] break-all flex-1 border border-gray-800 text-purple-300 font-bold">{webhookUrl}</code>
                                         <button onClick={() => {navigator.clipboard.writeText(webhookUrl); showNotification('URL Copiada!', 'info')}} className="text-purple-400 hover:text-white transition-colors">
                                             <CopyIcon className="w-5 h-5"/>
                                         </button>
                                     </div>
+                                </div>
+                                <div className="p-3 bg-purple-900/40 rounded-lg border border-purple-500/30 text-[11px] leading-relaxed">
+                                    Certifique-se de que a <strong>VITE_API_KEY</strong> está configurada nas variáveis de ambiente da Vercel para o simulador funcionar.
                                 </div>
                             </CardContent>
                         </Card>
@@ -390,7 +389,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     <div className="bg-blue-600 text-white font-black rounded-full w-8 h-8 flex items-center justify-center flex-shrink-0 shadow-md">2</div>
                                     <div>
                                         <p className="font-bold text-gray-800 dark:text-gray-100">Configure o Webhook</p>
-                                        <p className="text-sm text-gray-500 mt-1">No menu esquerdo, vá em <strong>WhatsApp > Configuração</strong>. Clique em "Editar" Webhook e use os dados abaixo:</p>
+                                        <p className="text-sm text-gray-500 mt-1">No menu esquerdo, vá em <strong>WhatsApp &gt; Configuração</strong>. Clique em "Editar" Webhook e use os dados abaixo:</p>
                                     </div>
                                 </div>
 
@@ -398,7 +397,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     <div className="space-y-5">
                                         <div>
                                             <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Callback URL (URL de Retorno):</p>
-                                            <p className="text-xs font-mono bg-white dark:bg-black p-3 rounded-lg border dark:border-gray-700 break-all shadow-sm text-purple-600 dark:text-purple-400">{webhookUrl}</p>
+                                            <p className="text-xs font-mono bg-white dark:bg-black p-3 rounded-lg border dark:border-gray-700 break-all shadow-sm text-purple-600 dark:text-purple-400 font-bold">{webhookUrl}</p>
                                         </div>
                                         <div>
                                             <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Verify Token (Token de Verificação):</p>

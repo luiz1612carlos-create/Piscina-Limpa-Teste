@@ -1,5 +1,4 @@
-
-const CACHE_NAME = "piscina-limpa-v39";
+const CACHE_NAME = "piscina-limpa-v40";
 
 const APP_SHELL_FILES = [
   './index.html',
@@ -8,7 +7,7 @@ const APP_SHELL_FILES = [
 ];
 
 self.addEventListener("install", event => {
-  console.log(`[SW v39] Instalando...`);
+  console.log(`[SW v40] Instalando...`);
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll(APP_SHELL_FILES);
@@ -18,7 +17,7 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("activate", event => {
-  console.log("[SW v39] Ativando e limpando caches antigos...");
+  console.log("[SW v40] Ativando e limpando caches antigos...");
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
@@ -36,7 +35,6 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const requestUrl = new URL(event.request.url);
 
-  // Não cacheia chamadas de API ou Firebase
   if (
     requestUrl.hostname.includes('googleapis.com') ||
     requestUrl.hostname.includes('gstatic.com') ||
@@ -46,7 +44,6 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  // Estratégia Network First para navegação para garantir index.html sempre novo
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
@@ -60,7 +57,6 @@ self.addEventListener("fetch", event => {
     return;
   }
 
-  // Cache First para outros recursos
   event.respondWith(
     caches.match(event.request).then(response => {
       return response || fetch(event.request);
