@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR" class="h-full dark">
 <head>
@@ -7,11 +8,11 @@
     
     <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#1f2937">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Piscina Limpa">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
-    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="manifest" href="/manifest.json">
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -43,25 +44,28 @@
     <!-- Html2Canvas for Logo Builder -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
-    <!-- Google Gemini AI Setup -->
-    <script type="module">
-      import { GoogleGenAI } from "https://esm.run/@google/genai";
-      window.GoogleGenAI = GoogleGenAI;
-      window.process = window.process || { env: { API_KEY: '' } };
+    <!-- Environment & AI SDK Setup -->
+    <script>
+      window.process = window.process || {};
+      window.process.env = window.process.env || {};
     </script>
 
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="index.css">
 <script type="importmap">
 {
   "imports": {
     "react": "https://aistudiocdn.com/react@^19.2.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.1",
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client",
+    "react/jsx-runtime": "https://aistudiocdn.com/react@^19.2.1/jsx-runtime",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0",
     "path": "https://esm.sh/path@^0.12.7",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "url": "https://esm.sh/url@^0.11.4",
+    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0"
   }
 }
 </script>
@@ -72,15 +76,13 @@
 
     <script>
       window.firebaseConfig = {
-  apiKey: "AIzaSyC95v0_rz5p1J0exzJNv0WUn57KK9FO7IE",
-  authDomain: "sospiscinalimpa-81979.firebaseapp.com",
-  projectId: "sospiscinalimpa-81979",
-  storageBucket: "sospiscinalimpa-81979.firebasestorage.app",
-  messagingSenderId: "994396714578",
-  appId: "1:994396714578:web:ba00210e30e7f66b71118b"
-};
-
-
+        apiKey: "AIzaSyAGcNaVkzxTdzsR10RSsgHH56M6yGcVH0Y",
+        authDomain: "sos-piscinalimpa-56349.firebaseapp.com",
+        projectId: "sos-piscinalimpa-56349",
+        storageBucket: "sos-piscinalimpa-56349.firebasestorage.app",
+        messagingSenderId: "381700700922",
+        appId: "1:381700700922:web:bf89b0e0ffbb7a1b576743"
+      };
     </script>
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -88,17 +90,15 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
-    <!-- Usando caminho relativo explícito para evitar confusão com /src/main.tsx -->
     <script type="module" src="./index.tsx"></script>
     
     <script>
         (function() {
-            const CURRENT_VERSION = '41';
+            const CURRENT_VERSION = '51'; // Bumped version
             const storedVersion = localStorage.getItem('piscina_version');
             
             if (storedVersion !== CURRENT_VERSION) {
-                console.warn('[App] Nova versão detectada (v' + CURRENT_VERSION + '). Forçando limpeza total...');
-                
+                console.warn('[App] Atualizando para v' + CURRENT_VERSION);
                 const clearData = async () => {
                     if ('caches' in window) {
                         try {
@@ -106,54 +106,32 @@
                             await Promise.all(keys.map(key => caches.delete(key)));
                         } catch (e) {}
                     }
-                    
                     if ('serviceWorker' in navigator) {
                         try {
                             const registrations = await navigator.serviceWorker.getRegistrations();
                             await Promise.all(registrations.map(r => r.unregister()));
                         } catch (e) {}
                     }
-
-                    localStorage.clear();
                     localStorage.setItem('piscina_version', CURRENT_VERSION);
                     window.location.reload();
                 };
-
                 clearData();
                 return;
             }
 
             async function registerSW() {
                 if (!("serviceWorker" in navigator)) return;
-
                 try {
-                    if (document.readyState === 'uninitialized') return;
-                    const swPath = 'sw.js?v=' + CURRENT_VERSION + '&t=' + Date.now();
-                    const registration = await navigator.serviceWorker.register(swPath, { scope: './' });
-                    
-                    registration.onupdatefound = () => {
-                        const installingWorker = registration.installing;
-                        if (!installingWorker) return;
-                        
-                        installingWorker.onstatechange = () => {
-                            if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                console.log('[SW] Nova versão pronta. Recarregando...');
-                                window.location.reload();
-                            }
-                        };
-                    };
+                    // FIX: Always using relative path for preview environments
+                    const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+                    console.log('[PWA] Service Worker v' + CURRENT_VERSION + ' ativo.');
                 } catch (err) {
-                    if (err.name !== 'InvalidStateError' && err.name !== 'SecurityError') {
-                        console.error('[SW] Erro no registro:', err);
-                    }
+                    // Squelch PWA register errors in restricted preview environments
+                    console.debug('[PWA] SW register skipped/failed in preview:', err.message);
                 }
             }
 
-            if (document.readyState === 'complete') {
-                registerSW();
-            } else {
-                window.addEventListener('load', registerSW);
-            }
+            window.addEventListener('load', registerSW);
         })();
     </script>
 <script type="module" src="/index.tsx"></script>
