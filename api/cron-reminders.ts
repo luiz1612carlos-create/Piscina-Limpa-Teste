@@ -7,24 +7,9 @@ import * as admin from 'firebase-admin';
  * Programação defensiva total
  */
 
-// 🔐 VALIDAÇÃO DE AMBIENTE (OBRIGATÓRIA)
-if (
-  !process.env.FIREBASE_PROJECT_ID ||
-  !process.env.FIREBASE_CLIENT_EMAIL ||
-  !process.env.FIREBASE_PRIVATE_KEY
-) {
-  throw new Error('Firebase Admin ENV vars missing');
-}
-
-// 🔥 INIT FIREBASE ADMIN (SAFE)
-if (admin.apps.length === 0) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    }),
-  });
+// 🔥 INIT FIREBASE ADMIN (SAFE PARA VERCEL)
+if (!admin.apps.length) {
+  admin.initializeApp();
 }
 
 const db = admin.firestore();
@@ -70,7 +55,7 @@ function parseMessage(
 }
 
 export default async function handler(req: any, res: any) {
-  // 🔐 TOKEN DO CRON
+  // 🔐 TOKEN DO CRON (OBRIGATÓRIO)
   if (req.headers?.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -89,7 +74,10 @@ export default async function handler(req: any, res: any) {
     }
 
     const robotMode = bot.robotMode ?? 'dry-run';
-    const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : bot.maxClientsPerRun ?? 1;
+    const MAX_CLIENTS =
+      robotMode === 'dry-run'
+        ? 1
+        : bot.maxClientsPerRun ?? 1;
 
     const now = bot.robotTestDate
       ? new Date(bot.robotTestDate + 'T12:00:00')
@@ -120,12 +108,18 @@ export default async function handler(req: any, res: any) {
 
       if (!client?.payment) continue;
       if (client.payment.status === 'Pago') continue;
+
       if (
         robotMode === 'live' &&
         client.payment.lastBillingCycle === cycle
-      ) continue;
+      ) {
+        continue;
+      }
 
-      const dueDateStr = String(client.payment.dueDate ?? '').split('T')[0];
+      const dueDateStr = String(
+        client.payment.dueDate ?? ''
+      ).split('T')[0];
+
       if (dueDateStr !== targetDateStr) continue;
 
       const finalMessage = parseMessage(
@@ -180,6 +174,7 @@ export default async function handler(req: any, res: any) {
       simulatedDate: targetDateStr,
     });
   } catch (err: any) {
+    console.error('CRON ERROR:', err);
     return res.status(500).json({ error: err.message });
   }
 }
