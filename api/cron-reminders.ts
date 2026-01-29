@@ -6,6 +6,8 @@ import * as admin from 'firebase-admin';
  * 🤖 MOTOR DO ROBÔ REAL (APP B)
  * Este endpoint deve ser chamado via Cron Job.
  * Ele gera as mensagens e marca o ciclo como processado.
+ * 
+ * ATUALIZAÇÃO: MODO DRY-RUN E TRAVAS DE SEGURANÇA.
  */
 
 if (!admin.apps.length) {
@@ -37,29 +39,38 @@ export default async function handler(req: any, res: any) {
     }
 
     try {
-        const today = new Date();
-        const currentCycle = `${today.getFullYear()}-${today.getMonth() + 1}`;
-        
-        // Alvo: Vencimento em 2 dias
-        const targetDate = new Date();
-        targetDate.setDate(today.getDate() + 2);
-        const targetDateStr = targetDate.toISOString().split('T')[0];
-
         const settingsSnap = await db.collection('settings').doc('main').get();
         const settings = settingsSnap.data();
         const bot = settings?.aiBot;
 
         if (!bot?.enabled) return res.status(200).json({ status: "Robot is off" });
 
+        // 1️⃣ MODO DO ROBÔ E DATA TESTE
+        const robotMode = bot.robotMode || 'dry-run';
+        const robotTestDateStr = bot.robotTestDate;
+        const now = robotTestDateStr ? new Date(robotTestDateStr + 'T12:00:00') : new Date();
+        const currentCycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
+        
+        // Alvo: Vencimento em 2 dias com base na data do robô (real ou teste)
+        const targetDate = new Date(now);
+        targetDate.setDate(now.getDate() + 2);
+        const targetDateStr = targetDate.toISOString().split('T')[0];
+
+        // 2️⃣ LIMITE DE SEGURANÇA
+        // Em dry-run o limite é sempre 1. Em live, usa o configurado ou 1 por padrão.
+        const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : (bot.maxClientsPerRun || 1);
+
         const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
         let count = 0;
 
         for (const doc of clientsSnap.docs) {
+            if (count >= MAX_CLIENTS) break;
+
             const client = doc.data();
             const clientId = doc.id;
 
-            // Pula se já processou este mês
-            if (client.payment?.lastBillingCycle === currentCycle) continue;
+            // 3️⃣ TRAVA DE CICLO (Ignora se já processado real no ciclo atual)
+            if (client.payment?.lastBillingCycle === currentCycle && robotMode === 'live') continue;
             // Pula se já pagou
             if (client.payment?.status === 'Pago') continue;
 
@@ -74,12 +85,31 @@ export default async function handler(req: any, res: any) {
                     'PIX': settings?.pixKey || "Chave no painel"
                 });
 
-                // SALVA NO FIREBASE PARA O SOCKET EXTERNO CONSUMIR
-                await db.collection('clients').doc(clientId).update({
-                    'payment.lastBillingNotificationRomantic': finalMessage,
-                    'payment.lastBillingCycle': currentCycle,
-                    'payment.generatedAt': admin.firestore.FieldValue.serverTimestamp()
-                });
+                // 4️⃣ REGISTRO DE PREVIEW (OBRIGATÓRIO PARA AMBOS OS MODOS)
+                const previewData = {
+                    clientId: clientId,
+                    clientName: client.name,
+                    phone: client.phone || 'N/A',
+                    messageFinal: finalMessage,
+                    dueDate: client.payment.dueDate,
+                    generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    status: robotMode === 'live' ? 'Sent' : 'Simulation'
+                };
+
+                await db.collection('robotPreviews').add(previewData);
+
+                // 5️⃣ REGRA FINAL DE ENVIO REAL
+                if (robotMode === 'live') {
+                    // SALVA NO FIREBASE PARA O SOCKET EXTERNO CONSUMIR
+                    await db.collection('clients').doc(clientId).update({
+                        'payment.lastBillingNotificationRomantic': finalMessage,
+                        'payment.lastBillingCycle': currentCycle,
+                        'payment.generatedAt': admin.firestore.FieldValue.serverTimestamp()
+                    });
+                } else {
+                    // Em dry-run, apenas logamos que a mensagem foi gerada para preview
+                    console.log(`[DRY-RUN] Mensagem gerada para ${client.name}: ${finalMessage}`);
+                }
 
                 count++;
             }
@@ -87,8 +117,10 @@ export default async function handler(req: any, res: any) {
 
         return res.status(200).json({ 
             success: true, 
+            mode: robotMode,
             cycle: currentCycle, 
-            messagesGenerated: count 
+            messagesProcessed: count,
+            simulatedDate: targetDateStr
         });
 
     } catch (error: any) {

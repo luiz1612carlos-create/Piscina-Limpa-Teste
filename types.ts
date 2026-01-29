@@ -286,6 +286,17 @@ export interface LogoTransforms {
     grayscale: number;
 }
 
+export interface RobotPreview {
+    id: string;
+    clientId: string;
+    clientName: string;
+    phone: string;
+    messageFinal: string;
+    dueDate: string;
+    generatedAt: any;
+    status: 'Simulation' | 'Sent';
+}
+
 export interface Settings {
     companyName: string;
     mainTitle: string;
@@ -347,6 +358,9 @@ export interface Settings {
     recessPeriods?: RecessPeriod[];
     aiBot?: {
         enabled: boolean;
+        robotMode: 'dry-run' | 'live';
+        robotTestDate?: string | null;
+        maxClientsPerRun?: number;
         billingReminder: string;
         overdueNotice: string;
         lastCronRun?: any;
@@ -413,6 +427,7 @@ export interface AppData {
     poolEvents: PoolEvent[];
     emergencyRequests: EmergencyRequest[];
     chatSessions: ChatSession[];
+    robotPreviews: RobotPreview[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
     loading: {
@@ -433,6 +448,7 @@ export interface AppData {
         planChangeRequests: boolean;
         emergencyRequests: boolean;
         chatSessions: boolean;
+        robotPreviews: boolean;
     };
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;
