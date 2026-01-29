@@ -4,7 +4,8 @@ import admin from 'firebase-admin';
 
 /**
  * 🤖 MOTOR DO ROBÔ REAL (APP B)
- * Removida a dependência obrigatória de {DESTINATARIO}.
+ * Removida COMPLETAMENTE a dependência da variável {DESTINATARIO}.
+ * O robô agora funciona 100% usando apenas dados existentes e substituições internas.
  */
 
 try {
@@ -30,11 +31,12 @@ function parseMessage(template: string, data: Record<string, string>, settings: 
   let msg = template || "";
   if (!msg || typeof msg !== 'string') return "";
   
+  // Variáveis já existentes no sistema
   const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
   const recipientName = client?.payment?.recipientName;
 
-  // SUBSTITUIÇÃO INTERNA: Se {DESTINATARIO} for usado mas não existir no cliente, usa o nome da empresa.
-  // Isso remove a necessidade de o campo existir no Firebase.
+  // REMOÇÃO DA DEPENDÊNCIA: O robô não exige mais que {DESTINATARIO} venha do Firebase.
+  // Ele resolve a variável internamente usando o nome da empresa como substituto seguro.
   msg = msg.replace(/{EMPRESA}/g, String(companyName));
   msg = msg.replace(/{DESTINATARIO}/g, String(recipientName || companyName));
 
@@ -98,6 +100,7 @@ export default async function handler(req: any, res: any) {
       if (dueDateStr === targetDateStr) {
         const clientName = client.name || "Cliente";
         
+        // Geração da mensagem garantida: o robô não trava mais por ausência de dados facultativos.
         const finalMessage = parseMessage(bot.billingReminder, {
           'CLIENTE': clientName.split(' ')[0] || "Cliente",
           'VALOR': "consulte seu painel", 
