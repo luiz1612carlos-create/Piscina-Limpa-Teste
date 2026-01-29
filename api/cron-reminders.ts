@@ -1,11 +1,10 @@
-
 // api/cron-reminders.ts
 import admin from 'firebase-admin';
 
 /**
  * 🤖 MOTOR DO ROBÔ REAL (APP B)
- * Correção Crítica: Remoção total da obrigatoriedade da variável {DESTINATARIO}.
- * O robô agora ignora a ausência do dado no Firebase e prossegue com o envio.
+ * Correção Crítica: Remoção TOTAL da variável {DESTINATARIO}.
+ * O robô não referencia, não valida e não substitui essa variável.
  */
 
 try {
@@ -28,28 +27,32 @@ try {
 const db = admin.firestore();
 
 /**
- * Processa o template da mensagem substituindo as variáveis.
- * A variável {DESTINATARIO} agora é opcional e possui fallback interno.
+ * Processa o template da mensagem substituindo APENAS variáveis existentes.
+ * {DESTINATARIO} foi REMOVIDA completamente e não é mais reconhecida.
  */
-function parseMessage(template: string, data: Record<string, string>, settings: any, client: any) {
+function parseMessage(
+  template: string,
+  data: Record<string, string>,
+  settings: any
+) {
   let msg = template || "";
   if (!msg || typeof msg !== 'string') return "";
-  
-  // Dados globais e do cliente
-  const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
-  const recipientName = client?.payment?.recipientName || companyName;
 
-  // Substituição das variáveis de Identidade (Sempre resolvem, nunca erro)
+  // Variáveis institucionais válidas
+  const companyName =
+    settings?.billingCompanyName ||
+    settings?.companyName ||
+    "Equipe Financeira";
+
   msg = msg.replace(/{EMPRESA}/g, String(companyName));
-  msg = msg.replace(/{DESTINATARIO}/g, String(recipientName));
 
-  // Substituição das variáveis dinâmicas de cobrança
+  // Substituição das variáveis dinâmicas permitidas
   const safeData = data || {};
   Object.entries(safeData).forEach(([key, val]) => {
     const regex = new RegExp(`{${key}}`, 'gi');
     msg = msg.replace(regex, String(val || ""));
   });
-  
+
   return msg;
 }
 
@@ -57,35 +60,51 @@ export default async function handler(req: any, res: any) {
   try {
     const authHeader = req.headers?.authorization;
     const cronSecret = process.env.CRON_SECRET;
+
     if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
     const settingsSnap = await db.collection('settings').doc('main').get();
-    if (!settingsSnap.exists) return res.status(200).json({ status: "Settings not found" });
-    
+    if (!settingsSnap.exists) {
+      return res.status(200).json({ status: "Settings not found" });
+    }
+
     const settings = settingsSnap.data();
     const bot = settings?.aiBot;
 
-    if (!bot || !bot.enabled) return res.status(200).json({ status: "Robot is off" });
+    if (!bot || !bot.enabled) {
+      return res.status(200).json({ status: "Robot is off" });
+    }
 
     const robotMode = bot.robotMode || 'dry-run';
-    const now = bot.robotTestDate ? new Date(bot.robotTestDate + 'T12:00:00') : new Date();
-    
-    if (isNaN(now.getTime())) return res.status(400).json({ error: "Data de teste inválida." });
+    const now = bot.robotTestDate
+      ? new Date(bot.robotTestDate + 'T12:00:00')
+      : new Date();
+
+    if (isNaN(now.getTime())) {
+      return res.status(400).json({ error: "Data de teste inválida." });
+    }
 
     const currentCycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
     const targetDate = new Date(now);
     targetDate.setDate(now.getDate() + 2);
     const targetDateStr = targetDate.toISOString().split('T')[0];
 
-    const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
-    
+    const clientsSnap = await db
+      .collection('clients')
+      .where('clientStatus', '==', 'Ativo')
+      .get();
+
     if (!clientsSnap || clientsSnap.empty) {
       return res.status(200).json({ status: "No active clients", processed: 0 });
     }
 
-    const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : (Number(bot.maxClientsPerRun) || 1);
+    const MAX_CLIENTS =
+      robotMode === 'dry-run'
+        ? 1
+        : Number(bot.maxClientsPerRun) || 1;
+
     let count = 0;
 
     for (const doc of clientsSnap.docs) {
@@ -93,28 +112,36 @@ export default async function handler(req: any, res: any) {
 
       const client = doc.data();
       const clientId = doc.id;
-      
+
       if (!client || !client.payment) continue;
       if (client.payment.lastBillingCycle === currentCycle && robotMode === 'live') continue;
       if (client.payment.status === 'Pago') continue;
 
       const rawDueDate = client.payment.dueDate;
-      const dueDateStr = rawDueDate && typeof rawDueDate === 'string' ? rawDueDate.split('T')[0] : "";
+      const dueDateStr =
+        rawDueDate && typeof rawDueDate === 'string'
+          ? rawDueDate.split('T')[0]
+          : "";
 
       if (dueDateStr === targetDateStr) {
         const clientName = client.name || "Cliente";
-        
-        // Geração da mensagem: parseMessage agora é infalível quanto a variáveis ausentes.
-        const finalMessage = parseMessage(bot.billingReminder, {
-          'CLIENTE': clientName.split(' ')[0] || "Cliente",
-          'VALOR': "consulte seu painel", 
-          'VENCIMENTO': rawDueDate ? new Date(rawDueDate).toLocaleDateString('pt-BR') : "---",
-          'PIX': client.pixKey || settings?.pixKey || "Chave no painel"
-        }, settings, client);
+
+        const finalMessage = parseMessage(
+          bot.billingReminder,
+          {
+            CLIENTE: clientName.split(' ')[0] || "Cliente",
+            VALOR: "consulte seu painel",
+            VENCIMENTO: rawDueDate
+              ? new Date(rawDueDate).toLocaleDateString('pt-BR')
+              : "---",
+            PIX: client.pixKey || settings?.pixKey || "Chave no painel"
+          },
+          settings
+        );
 
         const previewData = {
-          clientId: clientId,
-          clientName: clientName,
+          clientId,
+          clientName,
           phone: client.phone || 'N/A',
           messageFinal: finalMessage,
           dueDate: rawDueDate || "",
@@ -136,9 +163,16 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    return res.status(200).json({ success: true, mode: robotMode, processed: count });
+    return res.status(200).json({
+      success: true,
+      mode: robotMode,
+      processed: count
+    });
 
   } catch (error: any) {
-    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: error.message });
+    return res.status(500).json({
+      error: "INTERNAL_SERVER_ERROR",
+      message: error.message
+    });
   }
 }
