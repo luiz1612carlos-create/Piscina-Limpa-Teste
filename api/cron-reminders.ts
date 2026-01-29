@@ -4,8 +4,8 @@ import admin from 'firebase-admin';
 
 /**
  * 🤖 MOTOR DO ROBÔ REAL (APP B)
- * Removida COMPLETAMENTE a dependência da variável {DESTINATARIO}.
- * O robô agora funciona 100% usando apenas dados existentes e substituições internas.
+ * Correção Crítica: Remoção total da obrigatoriedade da variável {DESTINATARIO}.
+ * O robô agora ignora a ausência do dado no Firebase e prossegue com o envio.
  */
 
 try {
@@ -27,19 +27,23 @@ try {
 
 const db = admin.firestore();
 
+/**
+ * Processa o template da mensagem substituindo as variáveis.
+ * A variável {DESTINATARIO} agora é opcional e possui fallback interno.
+ */
 function parseMessage(template: string, data: Record<string, string>, settings: any, client: any) {
   let msg = template || "";
   if (!msg || typeof msg !== 'string') return "";
   
-  // Variáveis já existentes no sistema
+  // Dados globais e do cliente
   const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
-  const recipientName = client?.payment?.recipientName;
+  const recipientName = client?.payment?.recipientName || companyName;
 
-  // REMOÇÃO DA DEPENDÊNCIA: O robô não exige mais que {DESTINATARIO} venha do Firebase.
-  // Ele resolve a variável internamente usando o nome da empresa como substituto seguro.
+  // Substituição das variáveis de Identidade (Sempre resolvem, nunca erro)
   msg = msg.replace(/{EMPRESA}/g, String(companyName));
-  msg = msg.replace(/{DESTINATARIO}/g, String(recipientName || companyName));
+  msg = msg.replace(/{DESTINATARIO}/g, String(recipientName));
 
+  // Substituição das variáveis dinâmicas de cobrança
   const safeData = data || {};
   Object.entries(safeData).forEach(([key, val]) => {
     const regex = new RegExp(`{${key}}`, 'gi');
@@ -100,7 +104,7 @@ export default async function handler(req: any, res: any) {
       if (dueDateStr === targetDateStr) {
         const clientName = client.name || "Cliente";
         
-        // Geração da mensagem garantida: o robô não trava mais por ausência de dados facultativos.
+        // Geração da mensagem: parseMessage agora é infalível quanto a variáveis ausentes.
         const finalMessage = parseMessage(bot.billingReminder, {
           'CLIENTE': clientName.split(' ')[0] || "Cliente",
           'VALOR': "consulte seu painel", 
