@@ -4,10 +4,9 @@ import admin from 'firebase-admin';
 
 /**
  * 🤖 MOTOR DO ROBÔ REAL (APP B)
- * Atualizado com validações defensivas extremas para evitar FUNCTION_INVOCATION_FAILED.
+ * Removida a dependência obrigatória de {DESTINATARIO}.
  */
 
-// Inicialização segura do Firebase Admin
 try {
   if (!admin.apps || admin.apps.length === 0) {
     const privateKey = process.env.FIREBASE_PRIVATE_KEY;
@@ -27,32 +26,18 @@ try {
 
 const db = admin.firestore();
 
-// Utilitário de substituição de variáveis com validação defensiva
 function parseMessage(template: string, data: Record<string, string>, settings: any, client: any) {
   let msg = template || "";
   if (!msg || typeof msg !== 'string') return "";
   
-  // 1️⃣ Resolução de {EMPRESA} (quem cobra)
   const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
-  
-  // 2️⃣ Resolução de {DESTINATARIO} (quem recebe) - ESTRITAMENTE POR CLIENTE
   const recipientName = client?.payment?.recipientName;
 
-  // Trava Financeira: Se o template usa {DESTINATARIO} mas o valor está vazio, aborta.
-  if (msg.includes('{DESTINATARIO}')) {
-    const safeRecipient = recipientName ? String(recipientName).trim() : "";
-    if (safeRecipient.length === 0) {
-      return null; 
-    }
-  }
-
-  // Substituições prioritárias
+  // SUBSTITUIÇÃO INTERNA: Se {DESTINATARIO} for usado mas não existir no cliente, usa o nome da empresa.
+  // Isso remove a necessidade de o campo existir no Firebase.
   msg = msg.replace(/{EMPRESA}/g, String(companyName));
-  if (recipientName) {
-    msg = msg.replace(/{DESTINATARIO}/g, String(recipientName));
-  }
+  msg = msg.replace(/{DESTINATARIO}/g, String(recipientName || companyName));
 
-  // Outras variáveis dinâmicas com fallback para data
   const safeData = data || {};
   Object.entries(safeData).forEach(([key, val]) => {
     const regex = new RegExp(`{${key}}`, 'gi');
@@ -63,67 +48,40 @@ function parseMessage(template: string, data: Record<string, string>, settings: 
 }
 
 export default async function handler(req: any, res: any) {
-  // Try-catch global para garantir que erros virem JSON e não crash no Vercel
   try {
-    // 1. Verificação de Autorização
     const authHeader = req.headers?.authorization;
     const cronSecret = process.env.CRON_SECRET;
     if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
-      return res.status(401).json({ error: "Unauthorized", message: "Token inválido ou ausente." });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // 2. Carregamento de Configurações
     const settingsSnap = await db.collection('settings').doc('main').get();
-    if (!settingsSnap || !settingsSnap.exists) {
-      return res.status(200).json({ status: "Settings not found" });
-    }
+    if (!settingsSnap.exists) return res.status(200).json({ status: "Settings not found" });
     
     const settings = settingsSnap.data();
     const bot = settings?.aiBot;
 
-    if (!bot || !bot.enabled) {
-      return res.status(200).json({ status: "Robot is off" });
-    }
+    if (!bot || !bot.enabled) return res.status(200).json({ status: "Robot is off" });
 
-    // 3. Lógica de Data (Proteção contra Invalid Date)
     const robotMode = bot.robotMode || 'dry-run';
-    const robotTestDateStr = bot.robotTestDate;
+    const now = bot.robotTestDate ? new Date(bot.robotTestDate + 'T12:00:00') : new Date();
     
-    let now: Date;
-    if (robotTestDateStr && typeof robotTestDateStr === 'string' && robotTestDateStr.trim().length > 0) {
-      now = new Date(robotTestDateStr + 'T12:00:00');
-    } else {
-      now = new Date();
-    }
-
-    if (isNaN(now.getTime())) {
-      return res.status(400).json({ error: "Configuração de data de teste inválida." });
-    }
+    if (isNaN(now.getTime())) return res.status(400).json({ error: "Data de teste inválida." });
 
     const currentCycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
-    
     const targetDate = new Date(now);
     targetDate.setDate(now.getDate() + 2);
-    
-    // toISOString() pode falhar se o tempo for inválido
-    let targetDateStr = "";
-    try {
-      targetDateStr = targetDate.toISOString().split('T')[0];
-    } catch (e) {
-      return res.status(500).json({ error: "Erro ao processar data alvo." });
-    }
+    const targetDateStr = targetDate.toISOString().split('T')[0];
 
-    // 4. Busca de Clientes
     const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
     
-    if (!clientsSnap || !clientsSnap.docs || clientsSnap.docs.length === 0) {
-      return res.status(200).json({ status: "No active clients found", processed: 0 });
+    if (!clientsSnap || clientsSnap.empty) {
+      return res.status(200).json({ status: "No active clients", processed: 0 });
     }
 
     const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : (Number(bot.maxClientsPerRun) || 1);
     let count = 0;
 
-    // 5. Loop de Processamento
     for (const doc of clientsSnap.docs) {
       if (count >= MAX_CLIENTS) break;
 
@@ -131,8 +89,6 @@ export default async function handler(req: any, res: any) {
       const clientId = doc.id;
       
       if (!client || !client.payment) continue;
-
-      // Travas de segurança (Ciclo e Pagamento)
       if (client.payment.lastBillingCycle === currentCycle && robotMode === 'live') continue;
       if (client.payment.status === 'Pago') continue;
 
@@ -142,7 +98,6 @@ export default async function handler(req: any, res: any) {
       if (dueDateStr === targetDateStr) {
         const clientName = client.name || "Cliente";
         
-        // Geração de mensagem com validação estrita de {DESTINATARIO}
         const finalMessage = parseMessage(bot.billingReminder, {
           'CLIENTE': clientName.split(' ')[0] || "Cliente",
           'VALOR': "consulte seu painel", 
@@ -150,21 +105,6 @@ export default async function handler(req: any, res: any) {
           'PIX': client.pixKey || settings?.pixKey || "Chave no painel"
         }, settings, client);
 
-        if (finalMessage === null) {
-          // Registro de Erro Crítico de Dados
-          await db.collection('robotPreviews').add({
-            clientId: clientId,
-            clientName: clientName,
-            phone: client.phone || 'N/A',
-            messageFinal: "ERRO: Variável {DESTINATARIO} exigida no template, mas recipientName está ausente no cadastro deste cliente.",
-            dueDate: rawDueDate || "",
-            generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            status: 'Error'
-          });
-          continue; 
-        }
-
-        // Registro de Log com sucesso (ou simulação)
         const previewData = {
           clientId: clientId,
           clientName: clientName,
@@ -189,19 +129,9 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    return res.status(200).json({ 
-      success: true, 
-      mode: robotMode,
-      cycle: currentCycle, 
-      messagesProcessed: count,
-      simulatedDate: targetDateStr
-    });
+    return res.status(200).json({ success: true, mode: robotMode, processed: count });
 
   } catch (error: any) {
-    console.error("Erro fatal no robô:", error);
-    return res.status(500).json({ 
-      error: "INTERNAL_SERVER_ERROR", 
-      message: error.message || "Erro desconhecido na execução do robô."
-    });
+    return res.status(500).json({ error: "INTERNAL_SERVER_ERROR", message: error.message });
   }
 }

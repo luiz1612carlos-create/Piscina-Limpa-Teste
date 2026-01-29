@@ -72,10 +72,9 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
         return `${d.getFullYear()}-${d.getMonth() + 1}`;
     }, [botConfig.robotTestDate]);
 
-    const VariableBadge = ({ name, description, critical }: { name: string, description?: string, critical?: boolean }) => (
-        <span className={`group relative text-[10px] px-2 py-0.5 rounded font-mono font-bold cursor-help ${critical ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-primary-100 text-primary-700'}`} title={description}>
+    const VariableBadge = ({ name, description }: { name: string, description?: string }) => (
+        <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-primary-100 text-primary-700 border border-primary-200 cursor-help" title={description}>
             {`{${name}}`}
-            {critical && <span className="ml-1">⚠️</span>}
         </span>
     );
 
@@ -85,7 +84,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                 <div>
                     <h2 className="text-2xl font-black text-primary-600 flex items-center gap-2">
                         <SparklesIcon className="w-8 h-8" />
-                        Robô de Cobrança Real
+                        Robô de Cobrança
                     </h2>
                     <p className="text-sm text-gray-500 italic">
                         {botConfig.robotMode === 'live' ? '🟢 MODO LIVE: Envios reais habilitados.' : '🟡 MODO DRY-RUN: Apenas simulação.'}
@@ -148,14 +147,14 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                                 </div>
                                                 <div className="text-right">
                                                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${log.status === 'Sent' ? 'bg-green-100 text-green-700' : log.status === 'Error' ? 'bg-red-200 text-red-800' : 'bg-amber-100 text-amber-700'}`}>
-                                                        {log.status === 'Sent' ? '🟢 ENVIADO' : log.status === 'Error' ? '❌ ERRO CRÍTICO' : '🟡 SIMULAÇÃO'}
+                                                        {log.status === 'Sent' ? '🟢 ENVIADO' : log.status === 'Error' ? '❌ ERRO' : '🟡 SIMULAÇÃO'}
                                                     </span>
                                                     <p className="text-[9px] text-gray-400 mt-1">
                                                         {toDate(log.generatedAt)?.toLocaleString('pt-BR')}
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className={`p-3 rounded border text-xs italic ${log.status === 'Error' ? 'bg-red-100 border-red-300 text-red-900' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                                            <div className="p-3 bg-white dark:bg-gray-800 border rounded border-gray-200 dark:border-gray-700 text-xs italic text-gray-600 dark:text-gray-300">
                                                 "{log.messageFinal}"
                                             </div>
                                             <p className="text-[9px] text-gray-400 mt-2 text-right">Referência de Vencimento: {new Date(log.dueDate).toLocaleDateString('pt-BR')}</p>
@@ -170,9 +169,8 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
 
             {activeTab === 'config' && (
                 <Card>
-                    <CardHeader className="font-bold">Inteligência e Travas do Robô</CardHeader>
+                    <CardHeader className="font-bold">Inteligência do Robô</CardHeader>
                     <CardContent className="p-6 space-y-8">
-                        {/* Seção de Identificação */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-8 border-b dark:border-gray-700">
                             <div className="space-y-4">
                                 <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Identidade Global</h4>
@@ -182,8 +180,8 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     onChange={e => setBillingInfo(p => ({...p, billingCompanyName: e.target.value}))}
                                     placeholder={settings?.companyName || "Nome Padrão"}
                                 />
-                                <p className="text-[10px] text-red-600 font-bold bg-red-50 p-2 rounded border border-red-100">
-                                    TRAVA ATIVA: A variável {`{DESTINATARIO}`} é obrigatória e deve ser configurada individualmente no pagamento de cada cliente para evitar erros financeiros.
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Dica: Se a variável {`{DESTINATARIO}`} estiver no template e o cliente não tiver um destinatário cadastrado, o robô usará o nome acima automaticamente.
                                 </p>
                             </div>
                             <div className="space-y-4">
@@ -209,7 +207,6 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                             </div>
                         </div>
 
-                        {/* Ambiente de Teste */}
                         <div className="pb-8 border-b dark:border-gray-700">
                              <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest mb-4">Ambiente de Teste</h4>
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -234,7 +231,6 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                              </div>
                         </div>
 
-                        {/* Templates */}
                         <div className="space-y-6">
                             <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Modelos de Mensagem</h4>
                             <div>
@@ -249,8 +245,8 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     <VariableBadge name="VALOR" description="Valor da manutenção (no painel)" /> 
                                     <VariableBadge name="VENCIMENTO" description="Data de vencimento formatada" /> 
                                     <VariableBadge name="PIX" description="Chave PIX do cliente ou banco" /> 
-                                    <VariableBadge name="EMPRESA" description="Identidade de cobrança global (quem cobra)" /> 
-                                    <VariableBadge name="DESTINATARIO" description="NOME OBRIGATÓRIO NO CADASTRO DO CLIENTE (quem recebe)" critical={true} />
+                                    <VariableBadge name="EMPRESA" description="Identidade de cobrança global" /> 
+                                    <VariableBadge name="DESTINATARIO" description="Nome do beneficiário (ou empresa se vazio)" />
                                 </div>
                             </div>
 
