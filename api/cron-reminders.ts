@@ -1,163 +1,185 @@
-
 // api/cron-reminders.ts
 import * as admin from 'firebase-admin';
 
 /**
  * 🤖 MOTOR DO ROBÔ REAL (APP B)
- * Este endpoint deve ser chamado via Cron Job.
- * Ele gera as mensagens e marca o ciclo como processado.
- * 
- * ATUALIZAÇÃO: VALIDAÇÕES DEFENSIVAS E PROGRAMAÇÃO SEGURA.
+ * Endpoint chamado via Cron Job
+ * Programação defensiva total
  */
 
-if (!admin.apps || admin.apps.length === 0) {
+// 🔐 VALIDAÇÃO DE AMBIENTE (OBRIGATÓRIA)
+if (
+  !process.env.FIREBASE_PROJECT_ID ||
+  !process.env.FIREBASE_CLIENT_EMAIL ||
+  !process.env.FIREBASE_PRIVATE_KEY
+) {
+  throw new Error('Firebase Admin ENV vars missing');
+}
+
+// 🔥 INIT FIREBASE ADMIN (SAFE)
+if (admin.apps.length === 0) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
       clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
     }),
   });
 }
 
 const db = admin.firestore();
 
-// Utilitário de substituição de variáveis com validação defensiva
-function parseMessage(template: string, data: Record<string, string>, settings: any, client: any) {
-    let msg = template || "";
-    if (!msg || typeof msg !== 'string') return "";
-    
-    // Resolução de {EMPRESA} (quem cobra)
-    const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
-    
-    // Resolução de {DESTINATARIO} (quem recebe) - ESTRITAMENTE POR CLIENTE
-    const recipientName = client?.payment?.recipientName;
+// 🧠 TEMPLATE ENGINE
+function parseMessage(
+  template: string,
+  data: Record<string, string>,
+  settings: any,
+  client: any
+) {
+  if (!template || typeof template !== 'string') return '';
 
-    // Se o template usa {DESTINATARIO} mas o valor está vazio/ausente, abortamos a mensagem
-    if (msg.includes('{DESTINATARIO}') && (!recipientName || String(recipientName).trim().length === 0)) {
-        return null; 
-    }
+  let msg = template;
 
-    // Substituições prioritárias
-    msg = msg.replace(/{EMPRESA}/g, companyName);
-    if (recipientName) {
-        msg = msg.replace(/{DESTINATARIO}/g, String(recipientName));
-    }
+  // {EMPRESA}
+  const companyName =
+    settings?.billingCompanyName ||
+    settings?.companyName ||
+    'Equipe Financeira';
 
-    // Outras variáveis dinâmicas com fallback para data
-    const safeData = data || {};
-    Object.entries(safeData).forEach(([key, val]) => {
-        const regex = new RegExp(`{${key}}`, 'gi');
-        msg = msg.replace(regex, String(val || ""));
-    });
-    return msg;
+  // {DESTINATARIO} — OBRIGATÓRIO POR CLIENTE
+  const recipientName = client?.payment?.recipientName;
+
+  if (msg.includes('{DESTINATARIO}') && !recipientName?.trim()) {
+    return null;
+  }
+
+  msg = msg.replace(/{EMPRESA}/g, companyName);
+
+  if (recipientName) {
+    msg = msg.replace(/{DESTINATARIO}/g, recipientName);
+  }
+
+  Object.entries(data || {}).forEach(([key, val]) => {
+    msg = msg.replace(
+      new RegExp(`{${key}}`, 'gi'),
+      String(val ?? '')
+    );
+  });
+
+  return msg;
 }
 
 export default async function handler(req: any, res: any) {
-    // Segurança: Verificar token da Cron
-    if (!req.headers || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ error: "Unauthorized" });
+  // 🔐 TOKEN DO CRON
+  if (req.headers?.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const settingsSnap = await db.collection('settings').doc('main').get();
+    if (!settingsSnap.exists) {
+      return res.status(200).json({ status: 'Settings not found' });
     }
 
-    try {
-        const settingsSnap = await db.collection('settings').doc('main').get();
-        if (!settingsSnap.exists) return res.status(200).json({ status: "Settings not found" });
-        
-        const settings = settingsSnap.data();
-        const bot = settings?.aiBot;
+    const settings = settingsSnap.data();
+    const bot = settings?.aiBot;
 
-        if (!bot || !bot.enabled) return res.status(200).json({ status: "Robot is off" });
+    if (!bot?.enabled) {
+      return res.status(200).json({ status: 'Robot is off' });
+    }
 
-        const robotMode = bot.robotMode || 'dry-run';
-        const robotTestDateStr = bot.robotTestDate;
-        const now = robotTestDateStr ? new Date(robotTestDateStr + 'T12:00:00') : new Date();
-        const currentCycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
-        
-        const targetDate = new Date(now);
-        targetDate.setDate(now.getDate() + 2);
-        const targetDateStr = targetDate.toISOString().split('T')[0];
+    const robotMode = bot.robotMode ?? 'dry-run';
+    const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : bot.maxClientsPerRun ?? 1;
 
-        const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : (bot.maxClientsPerRun || 1);
+    const now = bot.robotTestDate
+      ? new Date(bot.robotTestDate + 'T12:00:00')
+      : new Date();
 
-        const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
-        
-        if (!clientsSnap || !clientsSnap.docs || clientsSnap.docs.length === 0) {
-            return res.status(200).json({ status: "No active clients found", processed: 0 });
-        }
+    const cycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
 
-        let count = 0;
+    const target = new Date(now);
+    target.setDate(now.getDate() + 2);
+    const targetDateStr = target.toISOString().split('T')[0];
 
-        for (const doc of clientsSnap.docs) {
-            if (count >= MAX_CLIENTS) break;
+    const clientsSnap = await db
+      .collection('clients')
+      .where('clientStatus', '==', 'Ativo')
+      .get();
 
-            const client = doc.data();
-            const clientId = doc.id;
-            
-            if (!client || !client.payment) continue;
+    if (clientsSnap.empty) {
+      return res.status(200).json({ status: 'No active clients' });
+    }
 
-            if (client.payment.lastBillingCycle === currentCycle && robotMode === 'live') continue;
-            if (client.payment.status === 'Pago') continue;
+    let processed = 0;
 
-            const dueDateStr = String(client.payment.dueDate || "").split('T')[0];
+    for (const doc of clientsSnap.docs) {
+      if (processed >= MAX_CLIENTS) break;
 
-            if (dueDateStr === targetDateStr) {
-                // TENTA GERAR A MENSAGEM COM VALIDAÇÃO ESTRITA
-                const clientName = client.name || "Cliente";
-                const finalMessage = parseMessage(bot.billingReminder, {
-                    'CLIENTE': clientName.split(' ')[0] || "Cliente",
-                    'VALOR': "consulte seu painel", 
-                    'VENCIMENTO': client.payment.dueDate ? new Date(client.payment.dueDate).toLocaleDateString('pt-BR') : "---",
-                    'PIX': client.pixKey || settings?.pixKey || "Chave no painel"
-                }, settings, client);
+      const client = doc.data();
+      const clientId = doc.id;
 
-                // SE A MENSAGEM RETORNOU NULL, É ERRO DE DESTINATÁRIO
-                if (finalMessage === null) {
-                    await db.collection('robotPreviews').add({
-                        clientId: clientId,
-                        clientName: clientName,
-                        phone: client.phone || 'N/A',
-                        messageFinal: "ERRO: Campo {DESTINATARIO} exigido no template mas não configurado no pagamento do cliente.",
-                        dueDate: client.payment.dueDate || "",
-                        generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                        status: 'Error'
-                    });
-                    continue; 
-                }
+      if (!client?.payment) continue;
+      if (client.payment.status === 'Pago') continue;
+      if (
+        robotMode === 'live' &&
+        client.payment.lastBillingCycle === cycle
+      ) continue;
 
-                // REGISTRO DE PREVIEW/LOG SUCESSO
-                const previewData = {
-                    clientId: clientId,
-                    clientName: clientName,
-                    phone: client.phone || 'N/A',
-                    messageFinal: finalMessage,
-                    dueDate: client.payment.dueDate || "",
-                    generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    status: robotMode === 'live' ? 'Sent' : 'Simulation'
-                };
+      const dueDateStr = String(client.payment.dueDate ?? '').split('T')[0];
+      if (dueDateStr !== targetDateStr) continue;
 
-                await db.collection('robotPreviews').add(previewData);
+      const finalMessage = parseMessage(
+        bot.billingReminder,
+        {
+          CLIENTE: (client.name || 'Cliente').split(' ')[0],
+          VALOR: 'consulte seu painel',
+          VENCIMENTO: client.payment.dueDate
+            ? new Date(client.payment.dueDate).toLocaleDateString('pt-BR')
+            : '---',
+          PIX: client.pixKey || settings?.pixKey || 'Chave no painel',
+        },
+        settings,
+        client
+      );
 
-                if (robotMode === 'live') {
-                    await db.collection('clients').doc(clientId).update({
-                        'payment.lastBillingNotificationRomantic': finalMessage,
-                        'payment.lastBillingCycle': currentCycle,
-                        'payment.generatedAt': admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-
-                count++;
-            }
-        }
-
-        return res.status(200).json({ 
-            success: true, 
-            mode: robotMode,
-            cycle: currentCycle, 
-            messagesProcessed: count,
-            simulatedDate: targetDateStr
+      if (finalMessage === null) {
+        await db.collection('robotPreviews').add({
+          clientId,
+          clientName: client.name || 'Cliente',
+          messageFinal:
+            'ERRO: {DESTINATARIO} exigido mas não configurado para este cliente.',
+          status: 'Error',
+          generatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+        continue;
+      }
 
-    } catch (error: any) {
-        return res.status(500).json({ error: error.message });
+      await db.collection('robotPreviews').add({
+        clientId,
+        clientName: client.name || 'Cliente',
+        messageFinal: finalMessage,
+        status: robotMode === 'live' ? 'Sent' : 'Simulation',
+        generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      if (robotMode === 'live') {
+        await db.collection('clients').doc(clientId).update({
+          'payment.lastBillingCycle': cycle,
+          'payment.generatedAt':
+            admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+      processed++;
     }
+
+    return res.status(200).json({
+      success: true,
+      mode: robotMode,
+      processed,
+      simulatedDate: targetDateStr,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
 }
