@@ -7,10 +7,10 @@ import * as admin from 'firebase-admin';
  * Este endpoint deve ser chamado via Cron Job.
  * Ele gera as mensagens e marca o ciclo como processado.
  * 
- * ATUALIZAÇÃO: RESOLUÇÃO ESTRITA DE DESTINATÁRIO (Sem fallback global).
+ * ATUALIZAÇÃO: VALIDAÇÕES DEFENSIVAS E PROGRAMAÇÃO SEGURA.
  */
 
-if (!admin.apps.length) {
+if (!admin.apps || admin.apps.length === 0) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
@@ -22,49 +22,51 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-// Utilitário de substituição de variáveis
+// Utilitário de substituição de variáveis com validação defensiva
 function parseMessage(template: string, data: Record<string, string>, settings: any, client: any) {
     let msg = template || "";
+    if (!msg || typeof msg !== 'string') return "";
     
-    // 1️⃣ Resolução de {EMPRESA} (quem cobra)
-    // Regra: settings.billingCompanyName -> settings.companyName -> Fallback fixo
+    // Resolução de {EMPRESA} (quem cobra)
     const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
     
-    // 2️⃣ Resolução de {DESTINATARIO} (quem recebe) - ESTRITAMENTE POR CLIENTE
-    // Regra: client.payment.recipientName -> Se ausente, retorna null para indicar erro crítico
+    // Resolução de {DESTINATARIO} (quem recebe) - ESTRITAMENTE POR CLIENTE
     const recipientName = client?.payment?.recipientName;
 
-    // Se o template usa {DESTINATARIO} mas o valor está vazio/ausente, abortamos a mensagem retornando null
-    if (msg.includes('{DESTINATARIO}') && (!recipientName || recipientName.trim() === "")) {
+    // Se o template usa {DESTINATARIO} mas o valor está vazio/ausente, abortamos a mensagem
+    if (msg.includes('{DESTINATARIO}') && (!recipientName || String(recipientName).trim().length === 0)) {
         return null; 
     }
 
     // Substituições prioritárias
     msg = msg.replace(/{EMPRESA}/g, companyName);
     if (recipientName) {
-        msg = msg.replace(/{DESTINATARIO}/g, recipientName);
+        msg = msg.replace(/{DESTINATARIO}/g, String(recipientName));
     }
 
-    // Outras variáveis dinâmicas do objeto data
-    Object.entries(data).forEach(([key, val]) => {
+    // Outras variáveis dinâmicas com fallback para data
+    const safeData = data || {};
+    Object.entries(safeData).forEach(([key, val]) => {
         const regex = new RegExp(`{${key}}`, 'gi');
-        msg = msg.replace(regex, val);
+        msg = msg.replace(regex, String(val || ""));
     });
     return msg;
 }
 
 export default async function handler(req: any, res: any) {
     // Segurança: Verificar token da Cron
-    if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!req.headers || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
         return res.status(401).json({ error: "Unauthorized" });
     }
 
     try {
         const settingsSnap = await db.collection('settings').doc('main').get();
+        if (!settingsSnap.exists) return res.status(200).json({ status: "Settings not found" });
+        
         const settings = settingsSnap.data();
         const bot = settings?.aiBot;
 
-        if (!bot?.enabled) return res.status(200).json({ status: "Robot is off" });
+        if (!bot || !bot.enabled) return res.status(200).json({ status: "Robot is off" });
 
         const robotMode = bot.robotMode || 'dry-run';
         const robotTestDateStr = bot.robotTestDate;
@@ -78,6 +80,11 @@ export default async function handler(req: any, res: any) {
         const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : (bot.maxClientsPerRun || 1);
 
         const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
+        
+        if (!clientsSnap || !clientsSnap.docs || clientsSnap.docs.length === 0) {
+            return res.status(200).json({ status: "No active clients found", processed: 0 });
+        }
+
         let count = 0;
 
         for (const doc of clientsSnap.docs) {
@@ -85,18 +92,21 @@ export default async function handler(req: any, res: any) {
 
             const client = doc.data();
             const clientId = doc.id;
+            
+            if (!client || !client.payment) continue;
 
-            if (client.payment?.lastBillingCycle === currentCycle && robotMode === 'live') continue;
-            if (client.payment?.status === 'Pago') continue;
+            if (client.payment.lastBillingCycle === currentCycle && robotMode === 'live') continue;
+            if (client.payment.status === 'Pago') continue;
 
-            const dueDateStr = String(client.payment?.dueDate).split('T')[0];
+            const dueDateStr = String(client.payment.dueDate || "").split('T')[0];
 
             if (dueDateStr === targetDateStr) {
                 // TENTA GERAR A MENSAGEM COM VALIDAÇÃO ESTRITA
+                const clientName = client.name || "Cliente";
                 const finalMessage = parseMessage(bot.billingReminder, {
-                    'CLIENTE': client.name.split(' ')[0],
+                    'CLIENTE': clientName.split(' ')[0] || "Cliente",
                     'VALOR': "consulte seu painel", 
-                    'VENCIMENTO': new Date(client.payment.dueDate).toLocaleDateString('pt-BR'),
+                    'VENCIMENTO': client.payment.dueDate ? new Date(client.payment.dueDate).toLocaleDateString('pt-BR') : "---",
                     'PIX': client.pixKey || settings?.pixKey || "Chave no painel"
                 }, settings, client);
 
@@ -104,24 +114,23 @@ export default async function handler(req: any, res: any) {
                 if (finalMessage === null) {
                     await db.collection('robotPreviews').add({
                         clientId: clientId,
-                        clientName: client.name,
+                        clientName: clientName,
                         phone: client.phone || 'N/A',
                         messageFinal: "ERRO: Campo {DESTINATARIO} exigido no template mas não configurado no pagamento do cliente.",
-                        dueDate: client.payment.dueDate,
+                        dueDate: client.payment.dueDate || "",
                         generatedAt: admin.firestore.FieldValue.serverTimestamp(),
                         status: 'Error'
                     });
-                    console.error(`[ROBOT ERROR] Cliente ${client.name} ignorado: Destinatário ausente.`);
-                    continue; // Pula para o próximo cliente
+                    continue; 
                 }
 
                 // REGISTRO DE PREVIEW/LOG SUCESSO
                 const previewData = {
                     clientId: clientId,
-                    clientName: client.name,
+                    clientName: clientName,
                     phone: client.phone || 'N/A',
                     messageFinal: finalMessage,
-                    dueDate: client.payment.dueDate,
+                    dueDate: client.payment.dueDate || "",
                     generatedAt: admin.firestore.FieldValue.serverTimestamp(),
                     status: robotMode === 'live' ? 'Sent' : 'Simulation'
                 };

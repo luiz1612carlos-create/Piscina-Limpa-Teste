@@ -2,7 +2,7 @@
 // api/admin-chat.ts
 import admin from "firebase-admin";
 
-if (!admin.apps.length) {
+if (!admin.apps || admin.apps.length === 0) {
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
@@ -19,12 +19,17 @@ function calculateFee(client: any, settings: any): string {
   const pricing = settings.pricing;
   const volume = Number(client.poolVolume || 0);
   let basePrice = 0;
-  const tier = (pricing.volumeTiers || []).find((t: any) => volume >= Number(t.min) && volume <= Number(t.max));
-  if (tier) basePrice = Number(tier.price);
-  else if (pricing.volumeTiers?.length > 0) {
-      const sorted = [...pricing.volumeTiers].sort((a,b) => b.max - a.max);
+  
+  const tiers = pricing.volumeTiers || [];
+  const tier = tiers.find((t: any) => volume >= Number(t.min) && volume <= Number(t.max));
+  
+  if (tier) {
+    basePrice = Number(tier.price);
+  } else if (tiers.length > 0) {
+      const sorted = [...tiers].sort((a,b) => b.max - a.max);
       if (volume > sorted[0].max) basePrice = Number(sorted[0].price);
   }
+  
   let total = basePrice;
   if (client.hasWellWater) total += Number(pricing.wellWaterFee || 0);
   if (client.includeProducts) total += Number(pricing.productsFee || 0);
@@ -36,7 +41,7 @@ export default async function handler(req: any, res: any) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { sessionId, text, useTemplate } = req.body;
-  if (!sessionId || !text) return res.status(400).json({ error: "Missing parameters" });
+  if (!sessionId || !text || typeof text !== 'string') return res.status(400).json({ error: "Missing or invalid parameters" });
 
   try {
     const settingsSnap = await db.collection("settings").doc("main").get();
@@ -45,10 +50,12 @@ export default async function handler(req: any, res: any) {
     let payload: any;
 
     if (useTemplate && settings.whatsappTemplateName) {
-      // LOGICA DE TEMPLATE (PARA COBRANÇA FORA DA JANELA DE 24H)
-      // Buscamos os dados do cliente para preencher as variáveis do template Meta
+      // LOGICA DE TEMPLATE
       const from = sessionId.replace(/\D/g, "");
       const clientsSnap = await db.collection("clients").get();
+      
+      if (!clientsSnap || !clientsSnap.docs) throw new Error("Could not fetch clients list");
+
       const clientDoc = clientsSnap.docs.find(d => {
           const p = String(d.data().phone || "").replace(/\D/g, "");
           return p.slice(-8) === from.slice(-8);
@@ -83,10 +90,10 @@ export default async function handler(req: any, res: any) {
         }
       };
     } else {
-      // LOGICA DE TEXTO LIVRE (DENTRO DA JANELA DE 24H)
+      // LOGICA DE TEXTO LIVRE
       const urlRegex = /(https?:\/\/[^\s]+)/g;
       const matches = text.match(urlRegex);
-      const firstUrl = matches ? matches[0] : null;
+      const firstUrl = (matches && matches.length > 0) ? matches[0] : null;
 
       if (firstUrl) {
         const cleanText = text.replace(firstUrl, "").trim();
@@ -122,7 +129,6 @@ export default async function handler(req: any, res: any) {
     const metaData = await metaResponse.json();
     if (!metaResponse.ok) {
         console.error("❌ Erro Meta API:", metaData);
-        // Se falhou por falta de template e tentamos texto livre, avisar
         if (metaData.error?.code === 131030) {
             return res.status(403).json({ error: "JANELA_FECHADA", message: "O cliente não responde há 24h. Use um Template Oficial." });
         }
