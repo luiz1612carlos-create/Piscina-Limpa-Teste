@@ -25,30 +25,47 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [activeTab, setActiveTab] = useState<'monitor' | 'config'>('monitor');
 
+    // FIX: Renamed billingReminderTemplate and overdueNoticeTemplate to match types.ts
     const [botConfig, setBotConfig] = useState({
         enabled: true,
         robotMode: 'dry-run' as 'dry-run' | 'live',
         robotTestDate: null as string | null,
         maxClientsPerRun: 1,
-        billingReminderTemplate: "Olá {CLIENTE}! 🏊‍♂️ Passando para lembrar do vencimento da sua manutenção no dia {VENCIMENTO}. Valor: R$ {VALOR}. Chave PIX: {PIX}",
-        overdueNoticeTemplate: "Olá {CLIENTE}! Identificamos um atraso no pagamento de {VENCIMENTO}. PIX: {PIX}",
+        billingReminder: "Olá {CLIENTE}! 🏊‍♂️ Passando para lembrar do vencimento da sua manutenção no dia {VENCIMENTO}. Valor: R$ {VALOR}. Atenciosamente, {EMPRESA}.",
+        overdueNotice: "Olá {CLIENTE}! Identificamos um atraso no pagamento de {VENCIMENTO}. Favor realizar o PIX para {DESTINATARIO}. Chave: {PIX}",
+    });
+
+    const [billingInfo, setBillingInfo] = useState({
+        billingCompanyName: '',
+        billingRecipientName: ''
     });
 
     useEffect(() => {
-        if (settings?.aiBot) {
-            setBotConfig(prev => ({ 
-                ...prev, 
-                ...settings.aiBot,
-                robotMode: settings.aiBot.robotMode || 'dry-run',
-                maxClientsPerRun: settings.aiBot.maxClientsPerRun || 1
-            }));
+        if (settings) {
+            if (settings.aiBot) {
+                // FIX: Spread will now correctly overwrite renamed properties because they match Settings['aiBot']
+                setBotConfig(prev => ({ 
+                    ...prev, 
+                    ...settings.aiBot,
+                    robotMode: settings.aiBot.robotMode || 'dry-run',
+                    maxClientsPerRun: settings.aiBot.maxClientsPerRun || 1
+                }));
+            }
+            setBillingInfo({
+                billingCompanyName: settings.billingCompanyName || '',
+                billingRecipientName: settings.billingRecipientName || ''
+            });
         }
     }, [settings]);
 
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            await updateSettings({ aiBot: botConfig });
+            await updateSettings({ 
+                aiBot: botConfig,
+                billingCompanyName: billingInfo.billingCompanyName,
+                billingRecipientName: billingInfo.billingRecipientName
+            });
             showNotification('Configuração do Robô salva com sucesso!', 'success');
         } catch (e) {
             showNotification('Erro ao salvar configurações.', 'error');
@@ -157,8 +174,23 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                 <Card>
                     <CardHeader className="font-bold">Inteligência e Travas do Robô</CardHeader>
                     <CardContent className="p-6 space-y-8">
-                        {/* Seção de Modo e Travas */}
+                        {/* Seção de Identificação */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-8 border-b dark:border-gray-700">
+                            <div className="space-y-4">
+                                <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Identidade de Cobrança</h4>
+                                <Input 
+                                    label="Nome da Empresa (Variável {EMPRESA})"
+                                    value={billingInfo.billingCompanyName}
+                                    onChange={e => setBillingInfo(p => ({...p, billingCompanyName: e.target.value}))}
+                                    placeholder={settings?.companyName || "Nome Padrão"}
+                                />
+                                <Input 
+                                    label="Nome do Destinatário (Variável {DESTINATARIO})"
+                                    value={billingInfo.billingRecipientName}
+                                    onChange={e => setBillingInfo(p => ({...p, billingRecipientName: e.target.value}))}
+                                    placeholder={settings?.pixKeyRecipient || "Nome PIX"}
+                                />
+                            </div>
                             <div className="space-y-4">
                                 <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Segurança de Envio</h4>
                                 <Select 
@@ -179,23 +211,24 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     onChange={e => setBotConfig(p => ({...p, maxClientsPerRun: parseInt(e.target.value) || 1}))}
                                     disabled={botConfig.robotMode === 'dry-run'}
                                 />
-                                {botConfig.robotMode === 'dry-run' && (
-                                    <p className="text-[10px] text-amber-600 font-bold bg-amber-50 p-2 rounded">No modo Dry-Run, o robô processa apenas 1 cliente por vez para facilitar a conferência.</p>
-                                )}
                             </div>
-                            <div className="space-y-4">
-                                <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Ambiente de Teste</h4>
-                                <Input 
-                                    label="Forçar Data de Teste (Vazia = Hoje)"
-                                    type="date"
-                                    value={botConfig.robotTestDate || ''}
-                                    onChange={e => setBotConfig(p => ({...p, robotTestDate: e.target.value || null}))}
-                                />
-                                <p className="text-xs text-gray-500 italic">
-                                    Dica: Use esta data para simular ciclos futuros e ver se o robô identificaria os vencimentos corretamente.
-                                </p>
-                                <div className="flex items-center gap-2 pt-2">
-                                    <span className="text-sm font-bold">Robô Geral Habilitado?</span>
+                        </div>
+
+                        {/* Ambiente de Teste */}
+                        <div className="pb-8 border-b dark:border-gray-700">
+                             <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest mb-4">Ambiente de Teste</h4>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div>
+                                    <Input 
+                                        label="Forçar Data de Teste (Vazia = Hoje)"
+                                        type="date"
+                                        value={botConfig.robotTestDate || ''}
+                                        onChange={e => setBotConfig(p => ({...p, robotTestDate: e.target.value || null}))}
+                                    />
+                                    <p className="text-xs text-gray-500 italic mt-1">Simula vencimentos como se hoje fosse esta data.</p>
+                                </div>
+                                <div className="flex items-center gap-2 pt-2 md:pt-8">
+                                    <span className="text-sm font-bold">Robô de Mensagens Habilitado?</span>
                                     <input 
                                         type="checkbox" 
                                         checked={botConfig.enabled} 
@@ -203,7 +236,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                         className="w-5 h-5 accent-primary-600"
                                     />
                                 </div>
-                            </div>
+                             </div>
                         </div>
 
                         {/* Templates */}
@@ -213,11 +246,12 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                 <label className="block text-xs font-bold text-gray-400 mb-2">Lembrete de Cobrança (Vencimento +2 dias)</label>
                                 <textarea 
                                     className="w-full p-4 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-2xl text-sm min-h-[120px] focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                                    value={botConfig.billingReminderTemplate}
-                                    onChange={e => setBotConfig(p => ({...p, billingReminderTemplate: e.target.value}))}
+                                    // FIX: Updated value and onChange to use renamed properties
+                                    value={botConfig.billingReminder}
+                                    onChange={e => setBotConfig(p => ({...p, billingReminder: e.target.value}))}
                                 />
                                 <div className="flex flex-wrap gap-2 mt-2">
-                                    <VariableBadge name="CLIENTE" /> <VariableBadge name="VALOR" /> <VariableBadge name="VENCIMENTO" /> <VariableBadge name="PIX" />
+                                    <VariableBadge name="CLIENTE" /> <VariableBadge name="VALOR" /> <VariableBadge name="VENCIMENTO" /> <VariableBadge name="PIX" /> <VariableBadge name="EMPRESA" /> <VariableBadge name="DESTINATARIO" />
                                 </div>
                             </div>
 
@@ -225,8 +259,9 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                 <label className="block text-xs font-bold text-gray-400 mb-2">Mensagem de Atraso</label>
                                 <textarea 
                                     className="w-full p-4 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-2xl text-sm min-h-[120px] focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                                    value={botConfig.overdueNoticeTemplate}
-                                    onChange={e => setBotConfig(p => ({...p, overdueNoticeTemplate: e.target.value}))}
+                                    // FIX: Updated value and onChange to use renamed properties
+                                    value={botConfig.overdueNotice}
+                                    onChange={e => setBotConfig(p => ({...p, overdueNotice: e.target.value}))}
                                 />
                             </div>
                         </div>

@@ -8,6 +8,7 @@ import * as admin from 'firebase-admin';
  * Ele gera as mensagens e marca o ciclo como processado.
  * 
  * ATUALIZAÇÃO: MODO DRY-RUN E TRAVAS DE SEGURANÇA.
+ * ADIÇÃO: VARIÁVEIS {EMPRESA} E {DESTINATARIO}
  */
 
 if (!admin.apps.length) {
@@ -23,8 +24,20 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 // Utilitário de substituição de variáveis
-function parseMessage(template: string, data: Record<string, string>) {
+function parseMessage(template: string, data: Record<string, string>, settings: any) {
     let msg = template || "";
+    
+    // Resolução de {EMPRESA}
+    const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
+    
+    // Resolução de {DESTINATARIO}
+    const recipientName = settings?.billingRecipientName || settings?.pixKeyRecipient || settings?.companyName || "Não informado";
+
+    // Substituições prioritárias solicitadas
+    msg = msg.replace(/{EMPRESA}/g, companyName);
+    msg = msg.replace(/{DESTINATARIO}/g, recipientName);
+
+    // Outras variáveis dinâmicas do objeto data
     Object.entries(data).forEach(([key, val]) => {
         const regex = new RegExp(`{${key}}`, 'gi');
         msg = msg.replace(regex, val);
@@ -77,13 +90,14 @@ export default async function handler(req: any, res: any) {
             const dueDateStr = String(client.payment?.dueDate).split('T')[0];
 
             if (dueDateStr === targetDateStr) {
-                // GERA A MENSAGEM FINAL
-                const finalMessage = parseMessage(bot.billingReminderTemplate, {
+                // GERA A MENSAGEM FINAL PASSANDO SETTINGS PARA RESOLVER NOVAS VARS
+                // FIX: Renamed property from billingReminderTemplate to billingReminder to match Settings type
+                const finalMessage = parseMessage(bot.billingReminder, {
                     'CLIENTE': client.name.split(' ')[0],
                     'VALOR': "consulte seu painel", 
                     'VENCIMENTO': new Date(client.payment.dueDate).toLocaleDateString('pt-BR'),
                     'PIX': settings?.pixKey || "Chave no painel"
-                });
+                }, settings);
 
                 // 4️⃣ REGISTRO DE PREVIEW (OBRIGATÓRIO PARA AMBOS OS MODOS)
                 const previewData = {
