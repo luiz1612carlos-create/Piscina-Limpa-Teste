@@ -138,7 +138,7 @@ export interface Client {
     payment: {
         status: PaymentStatus;
         dueDate: string;
-        // Campos para o Robô Real (App B)
+        recipientName?: string;
         lastBillingNotificationRomantic?: any; 
         lastBillingCycle?: string; // Ex: "2023-10"
     };
@@ -289,7 +289,6 @@ export interface LogoTransforms {
 export interface Settings {
     companyName: string;
     billingCompanyName?: string;
-    billingRecipientName?: string;
     mainTitle: string;
     mainSubtitle: string;
     logoUrl?: string;
@@ -297,7 +296,6 @@ export interface Settings {
     logoTransforms?: LogoTransforms;
     baseAddress: Address;
     pixKey: string;
-    pixKeyRecipient?: string;
     googleReviewUrl?: string;
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
@@ -349,7 +347,6 @@ export interface Settings {
     recessPeriods?: RecessPeriod[];
     aiBot?: {
         enabled: boolean;
-        // FIX: Added missing properties to match root types.ts and bot usage
         robotMode: 'dry-run' | 'live';
         robotTestDate?: string | null;
         maxClientsPerRun?: number;

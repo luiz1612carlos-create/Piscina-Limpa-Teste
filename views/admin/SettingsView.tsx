@@ -11,6 +11,9 @@ import { Select } from '../../components/Select';
 import { calculateClientMonthlyFee } from '../../utils/calculations';
 import { firebase } from '../../firebase';
 
+// This is a workaround for the no-build-tool environment
+declare const html2canvas: any;
+
 interface SettingsViewProps {
     appContext: AppContextType;
     authContext: AuthContextType;
@@ -30,6 +33,8 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
     const [currentRecess, setCurrentRecess] = useState<Omit<RecessPeriod, 'id'> | RecessPeriod | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
+    const today = new Date().toISOString().split('T')[0];
+
     const handleOpenModal = (recess: RecessPeriod | null = null) => {
         if (recess) {
             setCurrentRecess({
@@ -43,11 +48,21 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
         setIsModalOpen(true);
     };
 
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setCurrentRecess(null);
+    };
+
     const handleSave = async () => {
         if (!currentRecess || !currentRecess.name || !currentRecess.startDate || !currentRecess.endDate) {
-            showNotification('Preencha todos os campos.', 'error');
+            showNotification('Todos os campos são obrigatórios.', 'error');
             return;
         }
+        if (new Date(currentRecess.startDate) > new Date(currentRecess.endDate)) {
+            showNotification('A data de início não pode ser posterior à data de término.', 'error');
+            return;
+        }
+
         setIsSaving(true);
         try {
             const recessToSave = {
@@ -56,40 +71,83 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
                 endDate: new Date(currentRecess.endDate + 'T23:59:59'),
             };
             await saveRecessPeriod(recessToSave);
-            showNotification('Recesso salvo!', 'success');
-            setIsModalOpen(false);
+            showNotification('Período de recesso salvo com sucesso!', 'success');
+            handleCloseModal();
         } catch (error: any) {
-            showNotification('Erro ao salvar recesso.', 'error');
-        } finally { setIsSaving(false); }
+            showNotification(error.message || 'Erro ao salvar período de recesso.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
+    const handleDelete = async (recessId: string) => {
+        if (window.confirm('Tem certeza que deseja excluir este período de recesso?')) {
+            try {
+                await deleteRecessPeriod(recessId);
+                showNotification('Recesso excluído com sucesso.', 'success');
+            } catch (error: any) {
+                showNotification(error.message || 'Erro ao excluir recesso.', 'error');
+            }
+        }
+    };
+    
     return (
-        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow h-full">
+        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-semibold">Gestão de Recessos</h3>
-                <Button size="sm" onClick={() => handleOpenModal()}>Adicionar</Button>
+                <Button size="sm" onClick={() => handleOpenModal()}>
+                    <PlusIcon className="w-4 h-4 mr-1" /> Adicionar Recesso
+                </Button>
             </div>
             <div className="space-y-2">
-                {settings?.recessPeriods?.map(recess => (
+                {settings?.recessPeriods && settings.recessPeriods.length > 0 ? settings.recessPeriods.map(recess => (
                     <div key={recess.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                         <div>
                             <span className="font-medium">{recess.name}</span>
                             <p className="text-xs text-gray-500">
-                                {toDate(recess.startDate)?.toLocaleDateString()} - {toDate(recess.endDate)?.toLocaleDateString()}
+                                {toDate(recess.startDate)?.toLocaleDateString('pt-BR')} - {toDate(recess.endDate)?.toLocaleDateString('pt-BR')}
                             </p>
                         </div>
-                        <Button size="sm" variant="danger" onClick={() => deleteRecessPeriod(recess.id)}><TrashIcon className="w-4 h-4" /></Button>
+                        <div className="flex gap-2">
+                            <Button size="sm" variant="danger" onClick={() => handleDelete(recess.id)}><TrashIcon className="w-4 h-4" /></Button>
+                        </div>
                     </div>
-                ))}
+                )) : <p className="text-sm text-gray-500">Nenhum período de recesso cadastrado.</p>}
             </div>
-             {isModalOpen && (
-                <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Configurar Recesso">
-                    <Input label="Nome" value={currentRecess?.name} onChange={(e) => setCurrentRecess(prev => ({...prev!, name: e.target.value}))} />
+             {isModalOpen && currentRecess && (
+                <Modal 
+                    isOpen={isModalOpen} 
+                    onClose={handleCloseModal} 
+                    title={'id' in currentRecess ? 'Editar Recesso' : 'Novo Recesso'}
+                    footer={
+                        <>
+                            <Button variant="secondary" onClick={handleCloseModal}>Cancelar</Button>
+                            <Button onClick={handleSave} isLoading={isSaving}>Salvar</Button>
+                        </>
+                    }
+                >
+                    <Input 
+                        label="Nome do Recesso" 
+                        value={currentRecess.name} 
+                        onChange={(e) => setCurrentRecess(prev => ({...prev!, name: e.target.value}))}
+                        placeholder="Ex: Recesso de Fim de Ano"
+                    />
                     <div className="grid grid-cols-2 gap-4">
-                        <Input label="Início" type="date" value={currentRecess?.startDate || ''} onChange={(e) => setCurrentRecess(prev => ({...prev!, startDate: e.target.value}))} />
-                        <Input label="Fim" type="date" value={currentRecess?.endDate || ''} onChange={(e) => setCurrentRecess(prev => ({...prev!, endDate: e.target.value}))} />
+                        <Input 
+                            label="Data de Início" 
+                            type="date"
+                            min={today}
+                            value={currentRecess.startDate || ''} 
+                            onChange={(e) => setCurrentRecess(prev => ({...prev!, startDate: e.target.value}))}
+                        />
+                        <Input 
+                            label="Data de Término" 
+                            type="date"
+                            min={currentRecess.startDate || today}
+                            value={currentRecess.endDate || ''} 
+                            onChange={(e) => setCurrentRecess(prev => ({...prev!, endDate: e.target.value}))}
+                        />
                     </div>
-                    <div className="flex justify-end mt-4"><Button onClick={handleSave} isLoading={isSaving}>Salvar</Button></div>
                 </Modal>
              )}
         </div>
@@ -97,221 +155,1121 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
 };
 
 const UserManager = ({ appContext }: { appContext: AppContextType }) => {
-    const { users, createTechnician, showNotification } = appContext;
+    const { users, loading, createTechnician, showNotification } = appContext;
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
+    const handleOpenModal = () => {
+        setName('');
+        setEmail('');
+        setPassword('');
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+    };
+    
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (password.length < 6) {
+            showNotification('A senha deve ter pelo menos 6 caracteres.', 'error');
+            return;
+        }
         setIsSaving(true);
         try {
             await createTechnician(name, email, password);
-            showNotification('Usuário criado!', 'success');
-            setIsModalOpen(false);
+            showNotification('Técnico criado com sucesso! Você será desconectado.', 'success');
         } catch (error: any) {
-            showNotification(error.message, 'error');
-        } finally { setIsSaving(false); }
+            showNotification(error.message || 'Erro ao criar técnico.', 'error');
+            setIsSaving(false);
+        }
     };
 
     return (
-        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow h-full">
+        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
             <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-semibold">Usuários do Sistema</h3>
-                <Button size="sm" onClick={() => setIsModalOpen(true)}><PlusIcon className="w-4 h-4 mr-1" /> Novo</Button>
+                <h3 className="text-xl font-semibold">Gestão de Usuários (Admin/Técnicos)</h3>
+                <Button size="sm" onClick={handleOpenModal}>
+                    <PlusIcon className="w-4 h-4 mr-1" /> Adicionar Técnico
+                </Button>
             </div>
-            <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                    <thead><tr className="border-b dark:border-gray-700 text-left"><th className="p-2">Nome</th><th className="p-2">Email</th><th className="p-2 text-right">Cargo</th></tr></thead>
-                    <tbody>{users.map(user => (<tr key={user.uid} className="border-b dark:border-gray-700"><td className="p-2 font-medium">{user.name}</td><td className="p-2">{user.email}</td><td className="p-2 text-right capitalize">{user.role}</td></tr>))}</tbody>
-                </table>
-            </div>
-            {isModalOpen && (
-                <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Novo Técnico">
-                    <form onSubmit={handleSave} className="space-y-4">
-                        <Input label="Nome" value={name} onChange={e => setName(e.target.value)} required />
-                        <Input label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
-                        <Input label="Senha" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
-                        <Button type="submit" isLoading={isSaving} className="w-full">Salvar e Deslogar</Button>
-                    </form>
-                </Modal>
+            {loading.users ? <Spinner /> : (
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                        <thead className="border-b dark:border-gray-700">
+                            <tr>
+                                <th className="text-left p-2 font-semibold">Nome</th>
+                                <th className="text-left p-2 font-semibold">Email</th>
+                                <th className="text-left p-2 font-semibold">Função</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {users.map(user => (
+                                <tr key={user.uid} className="border-b dark:border-gray-700">
+                                    <td className="p-2">{user.name}</td>
+                                    <td className="p-2">{user.email}</td>
+                                    <td className="p-2 capitalize">{user.role}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             )}
+             <Modal 
+                isOpen={isModalOpen} 
+                onClose={handleCloseModal} 
+                title="Adicionar Novo Técnico"
+                footer={
+                    <>
+                        <Button variant="secondary" onClick={handleCloseModal} disabled={isSaving}>Cancelar</Button>
+                    </>
+                }
+            >
+                <form onSubmit={handleSave} className="space-y-4">
+                    <Input 
+                        label="Nome Completo do Técnico" 
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                    />
+                    <Input 
+                        label="Email do Técnico"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                    />
+                    <Input 
+                        label="Senha Inicial"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        placeholder="Mínimo 6 caracteres"
+                    />
+                    <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 text-yellow-700 dark:text-yellow-300 rounded-r-lg text-sm">
+                        <strong>Atenção:</strong> Por segurança, ao criar um novo técnico você será desconectado e precisará fazer login novamente.
+                    </div>
+                     <div className="flex justify-end">
+                        <Button type="submit" isLoading={isSaving}>Salvando...</Button>
+                    </div>
+                </form>
+            </Modal>
+        </div>
+    );
+};
+
+const BankManager = ({ appContext }: { appContext: AppContextType }) => {
+    const { banks, saveBank, deleteBank, showNotification } = appContext;
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [currentBank, setCurrentBank] = useState<Omit<Bank, 'id'> | (Bank & { pixKey?: string, pixKeyRecipient?: string }) | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleOpenModal = (bank: Bank | null = null) => {
+        setCurrentBank(bank || { name: '', pixKey: '', pixKeyRecipient: '' });
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setCurrentBank(null);
+    };
+
+    const handleSave = async () => {
+        if (!currentBank || !currentBank.name) {
+            showNotification('O nome do banco é obrigatório.', 'error');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            await saveBank(currentBank);
+            showNotification('Banco salvo com sucesso!', 'success');
+            handleCloseModal();
+        } catch (error: any) {
+            showNotification(error.message || 'Erro ao salvar banco.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDelete = async (bankId: string) => {
+        if (window.confirm('Tem certeza que deseja excluir este banco?')) {
+            try {
+                await deleteBank(bankId);
+                showNotification('Banco excluído com sucesso.', 'success');
+            } catch (error: any) {
+                showNotification(error.message || 'Erro ao excluir banco.', 'error');
+            }
+        }
+    };
+    
+    return (
+        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">Gestão de Bancos/Contas</h3>
+                <Button size="sm" onClick={() => handleOpenModal()}>
+                    <PlusIcon className="w-4 h-4 mr-1" /> Adicionar Banco
+                </Button>
+            </div>
+            <div className="space-y-2">
+                {banks.map(bank => (
+                    <div key={bank.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+                        <div>
+                            <span className="font-medium">{bank.name}</span>
+                            {bank.pixKey && <p className="text-xs text-gray-500">PIX: {bank.pixKey}</p>}
+                        </div>
+                        <div className="flex gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => handleOpenModal(bank)}><EditIcon className="w-4 h-4" /></Button>
+                            <Button size="sm" variant="danger" onClick={() => handleDelete(bank.id)}><TrashIcon className="w-4 h-4" /></Button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+             {isModalOpen && currentBank && (
+                <Modal 
+                    isOpen={isModalOpen} 
+                    onClose={handleCloseModal} 
+                    title={'id' in currentBank ? 'Editar Banco' : 'Novo Banco'}
+                    footer={
+                        <>
+                            <Button variant="secondary" onClick={handleCloseModal}>Cancelar</Button>
+                            <Button onClick={handleSave} isLoading={isSaving}>Salvar</Button>
+                        </>
+                    }
+                >
+                    <Input 
+                        label="Nome do Banco/Conta" 
+                        value={currentBank.name} 
+                        onChange={(e) => setCurrentBank(prev => ({...prev!, name: e.target.value}))}
+                        placeholder="Ex: PicPay, Itaú, Dinheiro"
+                    />
+                     <Input 
+                        label="Chave PIX (Opcional)" 
+                        value={currentBank.pixKey || ''} 
+                        onChange={(e) => setCurrentBank(prev => ({...prev!, pixKey: e.target.value}))}
+                        placeholder="Chave PIX da conta"
+                    />
+                    <Input 
+                        label="Nome do Destinatário (Opcional)" 
+                        value={currentBank.pixKeyRecipient || ''} 
+                        onChange={(e) => setCurrentBank(prev => ({...prev!, pixKeyRecipient: e.target.value}))}
+                        placeholder="Nome do beneficiário"
+                    />
+                </Modal>
+             )}
+        </div>
+    );
+};
+
+const PlanEditor = ({ title, planKey, plan, setLocalSettings }: any) => {
+    
+    const handleChange = (field: string, value: string) => {
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], [field]: value}}}));
+    };
+    
+    const handleBenefitChange = (index: number, value: string) => {
+        const newBenefits = [...plan.benefits];
+        newBenefits[index] = value;
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], benefits: newBenefits}}}));
+    };
+    
+    const addBenefit = () => {
+        const newBenefits = [...plan.benefits, 'Novo benefício'];
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], benefits: newBenefits}}}));
+    };
+
+    const removeBenefit = (index: number) => {
+        const newBenefits = plan.benefits.filter((_: any, i: number) => i !== index);
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], benefits: newBenefits}}}));
+    };
+
+
+    return (
+        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <h3 className="text-xl font-semibold mb-4">{title}</h3>
+            <Input label="Título do Plano" value={plan.title} onChange={(e) => handleChange('title', e.target.value)} />
+            <h4 className="font-semibold mt-4 mb-2">Benefícios</h4>
+            {plan.benefits.map((benefit: string, index: number) => (
+                <div key={index} className="flex items-center gap-2 mb-2">
+                    <Input label="" value={benefit} onChange={(e) => handleBenefitChange(index, e.target.value)} containerClassName="flex-grow mb-0" />
+                    <Button variant="danger" size="sm" onClick={() => removeBenefit(index)}><TrashIcon className="w-4 h-4"/></Button>
+                </div>
+            ))}
+            <Button variant="secondary" size="sm" onClick={addBenefit}>Adicionar Benefício</Button>
+            
+            <h4 className="font-semibold mt-6 mb-2">Termos do Plano</h4>
+            <textarea
+                value={plan.terms}
+                onChange={(e) => handleChange('terms', e.target.value)}
+                rows={5}
+                className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+        </div>
+    );
+};
+
+const FidelityPlanEditor = ({ localSettings, setLocalSettings }: any) => {
+    const handleFidelityPlanChange = (index: number, field: keyof Omit<FidelityPlan, 'id'>, value: number) => {
+        const newPlans = [...localSettings.fidelityPlans];
+        newPlans[index][field] = value;
+        setLocalSettings((prev: any) => ({ ...prev!, fidelityPlans: newPlans }));
+    };
+
+    const addFidelityPlan = () => {
+        const newPlan = { id: Date.now().toString(), months: 0, discountPercent: 0 };
+        const newPlans = [...localSettings.fidelityPlans, newPlan];
+        setLocalSettings((prev: any) => ({ ...prev!, fidelityPlans: newPlans }));
+    };
+
+    const removeFidelityPlan = (index: number) => {
+        const newPlans = localSettings.fidelityPlans.filter((_, i) => i !== index);
+        setLocalSettings((prev: any) => ({ ...prev!, fidelityPlans: newPlans }));
+    };
+
+    return (
+        <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <h3 className="text-xl font-semibold mb-4">Planos de Fidelidade (VIP)</h3>
+            <div className="space-y-2">
+                {localSettings.fidelityPlans.map((plan: FidelityPlan, index: number) => (
+                    <div key={plan.id} className="flex items-center gap-2">
+                        <span>Fidelidade de</span>
+                        <Input label="" type="number" value={plan.months} onChange={(e) => handleFidelityPlanChange(index, 'months', +e.target.value)} containerClassName="mb-0 w-20" />
+                        <span>meses com</span>
+                        <Input label="" type="number" value={plan.discountPercent} onChange={(e) => handleFidelityPlanChange(index, 'discountPercent', +e.target.value)} containerClassName="mb-0 w-20" />
+                        <span>% de desconto</span>
+                        <Button variant="danger" size="sm" onClick={() => removeFidelityPlan(index)}><TrashIcon className="w-4 h-4"/></Button>
+                    </div>
+                ))}
+            </div>
+            <Button variant="secondary" size="sm" onClick={addFidelityPlan} className="mt-4">Adicionar Plano de Fidelidade</Button>
+             <PlanEditor title="Detalhes Gerais do Plano VIP" planKey="vip" plan={localSettings.plans.vip} setLocalSettings={setLocalSettings} />
         </div>
     );
 };
 
 const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) => {
-    const { settings, updateSettings, showNotification, banks, saveBank, deleteBank, clients, schedulePriceChange } = appContext;
+    const { settings, loading, updateSettings, showNotification, advancePlanUsage, clients, pendingPriceChanges, schedulePriceChange } = appContext;
     const { changePassword } = authContext;
     const [localSettings, setLocalSettings] = useState<Settings | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+
     const [logoFile, setLogoFile] = useState<File | null>(null);
     const [logoPreview, setLogoPreview] = useState<string | null>(null);
-    const [newPass, setNewPass] = useState('');
+    const [shouldRemoveLogo, setShouldRemoveLogo] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
-    const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
+
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [isSavingPassword, setIsSavingPassword] = useState(false);
+
+    // Price change logic
+    const [isPriceChangeModalOpen, setIsPriceChangeModalOpen] = useState(false);
+    const [affectedClientsPreview, setAffectedClientsPreview] = useState<AffectedClientPreview[]>([]);
+    const [viewAffectedClientsModalOpen, setViewAffectedClientsModalOpen] = useState(false);
+    
+    // Vigência options
+    const [priceEffectType, setPriceEffectType] = useState<'immediate' | 'scheduled'>('scheduled');
     const [customEffectiveDate, setCustomEffectiveDate] = useState<string>(() => {
-        const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split('T')[0];
+        const d = new Date();
+        d.setDate(d.getDate() + 30);
+        return d.toISOString().split('T')[0];
     });
+
+    const [isImpactModalOpen, setIsImpactModalOpen] = useState(false);
+
+    const pendingChange = pendingPriceChanges.find(c => c.status === 'pending');
 
     useEffect(() => {
         if (settings) {
-            setLocalSettings(JSON.parse(JSON.stringify(settings)));
+            const initialSettings = JSON.parse(JSON.stringify(settings));
+            if (pendingChange) {
+                initialSettings.pricing = JSON.parse(JSON.stringify(pendingChange.newPricing));
+            }
+            setLocalSettings(initialSettings);
             setLogoPreview(settings.logoUrl || null);
         }
-    }, [settings]);
+    }, [settings, pendingChange]);
 
-    if (!localSettings) return <Spinner />;
+    const impactAnalysis = useMemo(() => {
+        if (!settings || !localSettings) return [];
+        
+        return clients
+            .filter(c => c.clientStatus === 'Ativo' && !c.customPricing && c.plan === 'Simples')
+            .map(client => {
+                const currentFee = calculateClientMonthlyFee(client, settings);
+                const newFee = calculateClientMonthlyFee(client, localSettings);
+                const diff = newFee - currentFee;
+                return {
+                    id: client.id,
+                    name: client.name,
+                    currentFee,
+                    newFee,
+                    diff,
+                    percent: currentFee > 0 ? (diff / currentFee) * 100 : 0
+                };
+            })
+            .filter(item => Math.abs(item.diff) > 0.01)
+            .sort((a, b) => b.diff - a.diff);
+    }, [clients, settings, localSettings]);
 
-    const handleSimpleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>, section?: string) => {
+    const totalRevenueDiff = useMemo(() => {
+        return impactAnalysis.reduce((acc, curr) => acc + curr.diff, 0);
+    }, [impactAnalysis]);
+
+    if (loading.settings || loading.pendingPriceChanges || !localSettings) {
+        return <div className="flex justify-center items-center h-full"><Spinner size="lg" /></div>;
+    }
+
+    const handleSimpleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>, section?: keyof Settings | 'features' | 'automation' | 'pricing' | 'logoTransforms') => {
         const { name, value, type } = e.target;
-        let val: any = value;
-        if (type === 'number') val = parseFloat(value) || 0;
+        
+        let finalValue: any = value;
+        if (e.target.tagName === 'INPUT' && (type === 'number' || type === 'range')) {
+            finalValue = parseFloat(value) || 0;
+        }
+        
         setLocalSettings(prev => {
+            if (!prev) return null;
             const newState = JSON.parse(JSON.stringify(prev));
-            if (section) newState[section][name] = val;
-            else newState[name] = val;
+            if (section) {
+                const sectionKey = section as keyof Settings;
+                 if (!newState[sectionKey]) {
+                    (newState as any)[sectionKey] = {};
+                }
+                (newState[sectionKey] as any)[name] = finalValue;
+                return newState
+            }
+            (newState as any)[name] = finalValue;
             return newState;
         });
     };
+    
+    const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        let finalValue = value;
+        if (name === 'zip') {
+            finalValue = value
+                .replace(/\D/g, '')
+                .replace(/(\d{5})(\d)/, '$1-$2')
+                .slice(0, 9);
+        }
+        setLocalSettings(prev => {
+            if (!prev) return null;
+            return {
+                ...prev!,
+                baseAddress: {
+                    ...prev!.baseAddress,
+                    [name]: finalValue,
+                },
+            };
+        });
+    };
+
+    const handleToggle = (feature: keyof Settings['features']) => {
+        setLocalSettings(prev => ({
+            ...prev!,
+            features: {
+                ...prev!.features,
+                [feature]: !prev!.features[feature]
+            }
+        }));
+    };
+    
+    const handleTierChange = (index: number, field: 'min' | 'max' | 'price', value: number) => {
+        setLocalSettings(prev => {
+             const newPricing = { ...prev!.pricing };
+             const newTiers = prev!.pricing.volumeTiers.map((t, i) => 
+                 i === index ? { ...t, [field]: value } : t
+             );
+             newPricing.volumeTiers = newTiers;
+             return { ...prev!, pricing: newPricing };
+        });
+    };
+
+    const addTier = () => {
+        const newTiers = [...localSettings.pricing.volumeTiers, {min: 0, max: 0, price: 0}];
+        setLocalSettings(prev => ({...prev!, pricing: {...prev!.pricing, volumeTiers: newTiers}}));
+    };
+
+    const removeTier = (index: number) => {
+        const newTiers = localSettings.pricing.volumeTiers.filter((_, i) => i !== index);
+        setLocalSettings(prev => ({...prev!, pricing: {...prev!.pricing, volumeTiers: newTiers}}));
+    };
+    
+    const handleAdvanceOptionChange = (index: number, field: keyof AdvancePaymentOption, value: number) => {
+        setLocalSettings(prev => {
+            if (!prev) return null;
+            const newOptions = [...prev.advancePaymentOptions];
+            newOptions[index] = { ...newOptions[index], [field]: value };
+            return { ...prev, advancePaymentOptions: newOptions };
+        });
+    };
+
+    const addAdvanceOption = () => {
+        setLocalSettings(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                advancePaymentOptions: [...prev.advancePaymentOptions, { months: 0, discountPercent: 0 }]
+            };
+        });
+    };
+
+    const removeAdvanceOption = (index: number) => {
+        setLocalSettings(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                advancePaymentOptions: prev.advancePaymentOptions.filter((_, i) => i !== index)
+            };
+        });
+    };
+
+    const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setLogoFile(file);
+            setShouldRemoveLogo(false);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setLogoPreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleRemoveLogo = () => {
+        setShouldRemoveLogo(true);
+        setLogoFile(null);
+        setLogoPreview(null);
+        setLocalSettings(prev => ({ ...prev!, logoUrl: undefined }));
+    };
+
+    const handleResetTemplate = () => {
+        const defaultTemplate = "Olá {CLIENTE}, tudo bem? Passando para lembrar sobre o vencimento da sua mensalidade no valor de R$ {VALOR} no dia {VENCIMENTO}. \n\nChave PIX: {PIX} \nDestinatário: {DESTINATARIO}\n\nAgradecemos a parceria!";
+        handleSimpleChange({ target: { name: 'whatsappMessageTemplate', value: defaultTemplate } } as any);
+        showNotification('Modelo de mensagem restaurado para o padrão.', 'info');
+    };
 
     const handleSave = async () => {
+        if (!settings || !localSettings) return;
         setIsSaving(true);
+        setUploadProgress(logoFile ? 0 : null);
         try {
-            const priceChanged = JSON.stringify(localSettings.pricing) !== JSON.stringify(settings?.pricing);
-            if (priceChanged) {
-                setIsPriceModalOpen(true);
-                setIsSaving(false);
+            const hasPriceChanged = JSON.stringify(localSettings.pricing) !== JSON.stringify(settings.pricing);
+            const hasPlansChanged = JSON.stringify(localSettings.plans) !== JSON.stringify(settings.plans);
+
+            const settingsToSave = { ...localSettings };
+            
+            if (hasPlansChanged) {
+                settingsToSave.termsUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
+            }
+
+            // If price changed, we need the modal decision before final save of pricing section
+            if (hasPriceChanged) {
+                const affected = impactAnalysis.map(c => ({ id: c.id, name: c.name }));
+                setAffectedClientsPreview(affected);
+                setIsPriceChangeModalOpen(true);
+                setIsSaving(false); 
                 return;
             }
-            await updateSettings(localSettings, logoFile || undefined);
-            showNotification('Configurações salvas!', 'success');
-        } catch (e) { showNotification('Erro ao salvar', 'error'); } finally { setIsSaving(false); }
+
+            await updateSettings(
+                settingsToSave, 
+                logoFile || undefined, 
+                shouldRemoveLogo,
+                (progress) => setUploadProgress(progress)
+            );
+            
+            setLogoFile(null);
+            setShouldRemoveLogo(false);
+            showNotification('Configurações salvas com sucesso!', 'success');
+        } catch (error: any) {
+            showNotification(error.message || 'Erro ao salvar configurações.', 'error');
+        } finally {
+            setIsSaving(false);
+            setUploadProgress(null);
+        }
     };
 
-    const handleConfirmPrice = async () => {
+    const handleConfirmPriceChange = async () => {
+        if (!localSettings) return;
+        
         setIsSaving(true);
         try {
-            const affected = clients.filter(c => c.clientStatus === 'Ativo').map(c => ({id: c.id, name: c.name}));
-            await schedulePriceChange(localSettings.pricing, affected, new Date(customEffectiveDate + 'T12:00:00'));
-            await updateSettings(localSettings, logoFile || undefined);
-            showNotification('Preço agendado!', 'success');
-            setIsPriceModalOpen(false);
-        } catch (e) { showNotification('Erro no agendamento', 'error'); } finally { setIsSaving(false); }
+            let effectiveDateObj: Date;
+            
+            if (priceEffectType === 'immediate') {
+                effectiveDateObj = new Date();
+                effectiveDateObj.setSeconds(effectiveDateObj.getSeconds() + 5);
+            } else {
+                effectiveDateObj = new Date(customEffectiveDate + 'T12:00:00');
+            }
+
+            await schedulePriceChange(localSettings.pricing, affectedClientsPreview, effectiveDateObj);
+            
+            // Also save non-pricing settings that might have changed
+            const otherSettings = { ...localSettings };
+            await updateSettings(otherSettings, logoFile || undefined, shouldRemoveLogo);
+
+            showNotification(
+                priceEffectType === 'immediate' 
+                    ? 'Novos preços aplicados imediatamente!' 
+                    : `Alteração de preço agendada para ${effectiveDateObj.toLocaleDateString('pt-BR')}`, 
+                'success'
+            );
+            setIsPriceChangeModalOpen(false);
+        } catch (error: any) {
+             showNotification(error.message || 'Erro ao agendar alteração de preço.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
+    const handlePasswordChange = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (newPassword !== confirmPassword) {
+            showNotification('As senhas não coincidem.', 'error');
+            return;
+        }
+        if (newPassword.length < 6) {
+            showNotification('A senha precisa ter no mínimo 6 caracteres.', 'error');
+            return;
+        }
+        setIsSavingPassword(true);
+        try {
+            await changePassword(newPassword);
+            showNotification('Senha alterada com sucesso!', 'success');
+            setNewPassword('');
+            setConfirmPassword('');
+        } catch(error: any) {
+            showNotification(error.message || 'Erro ao alterar a senha.', 'error');
+        } finally {
+            setIsSavingPassword(false);
+        }
+    };
+    
+    const activeClientsCount = clients.filter(c => c.clientStatus === 'Ativo').length;
+
     return (
-        <div className="space-y-8 pb-20 max-w-7xl mx-auto">
-            <div className="flex justify-between items-center">
-                <h2 className="text-3xl font-black text-gray-800 dark:text-white">Configurações Gerais</h2>
-                <Button onClick={handleSave} isLoading={isSaving} className="shadow-lg">Salvar Tudo</Button>
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold">Configurações Gerais</h2>
+                <div>
+                    <Button onClick={handleSave} isLoading={isSaving}>Salvar Alterações</Button>
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* IDENTIDADE VISUAL */}
-                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow space-y-4">
-                    <h3 className="text-xl font-bold border-b pb-2">Identidade Visual</h3>
-                    <Input label="Nome da Empresa" name="companyName" value={localSettings.companyName} onChange={handleSimpleChange} />
-                    <Input label="PIX Padrão" name="pixKey" value={localSettings.pixKey} onChange={handleSimpleChange} />
-                    <div>
-                        <label className="block text-sm font-medium mb-1">Logo</label>
-                        <input type="file" onChange={e => {
-                            const f = e.target.files?.[0];
-                            if (f) { setLogoFile(f); const r = new FileReader(); r.onload = () => setLogoPreview(r.result as string); r.readAsDataURL(f); }
-                        }} className="w-full text-sm bg-gray-50 dark:bg-gray-900 p-2 rounded border border-gray-300 dark:border-gray-600" />
-                        {logoPreview && <img src={logoPreview} className="h-16 mt-2 object-contain border p-1 rounded bg-white" />}
+            {isSaving && uploadProgress !== null && (
+                <div className="mb-4">
+                    <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+                        <div 
+                            className="bg-primary-600 h-2.5 rounded-full transition-all duration-300" 
+                            style={{ width: `${uploadProgress}%` }}
+                        ></div>
                     </div>
+                    <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {logoFile ? `Enviando logo... ${Math.round(uploadProgress)}%` : 'Salvando...'}
+                    </p>
                 </div>
-                <UserManager appContext={appContext} />
-            </div>
+            )}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-8">
-                    {/* BANCOS */}
-                    <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
-                         <h3 className="text-xl font-bold border-b pb-2">Bancos</h3>
-                         <div className="space-y-2 mt-4">
-                             {banks.map(b => (
-                                 <div key={b.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200">
-                                     <span className="font-semibold text-gray-700 dark:text-gray-200">{b.name}</span>
-                                     <button onClick={() => deleteBank(b.id)} className="text-red-500 p-1 hover:bg-red-50 rounded"><TrashIcon className="w-5 h-5"/></button>
-                                 </div>
-                             ))}
-                             <Button size="sm" variant="secondary" className="w-full mt-2" onClick={() => {
-                                 const name = prompt("Nome do Banco:");
-                                 if (name) saveBank({name});
-                             }}>+ Adicionar Banco</Button>
-                         </div>
-                    </div>
-                    <RecessManager appContext={appContext} />
-                </div>
-
-                {/* RECURSOS E SEGURANÇA */}
-                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow space-y-6">
-                    <h3 className="text-xl font-bold border-b pb-2">Recursos e Fidelidade</h3>
-                    <div className="space-y-4">
-                        <ToggleSwitch label="VIP Ativo" enabled={localSettings.features.vipPlanEnabled} onChange={v => setLocalSettings((p:any)=>({...p, features: {...p.features, vipPlanEnabled: v}}))} />
-                        <ToggleSwitch label="Loja Ativa" enabled={localSettings.features.storeEnabled} onChange={v => setLocalSettings((p:any)=>({...p, features: {...p.features, storeEnabled: v}}))} />
-                        <ToggleSwitch label="Modo Manutenção" enabled={localSettings.features.maintenanceModeEnabled} onChange={v => setLocalSettings((p:any)=>({...p, features: {...p.features, maintenanceModeEnabled: v}}))} />
-                    </div>
-                    <div className="pt-6 border-t dark:border-gray-700">
-                        <h4 className="font-bold text-sm mb-3 uppercase text-gray-400">Segurança</h4>
-                        <div className="flex gap-2">
-                            <Input label="" type="password" placeholder="Nova senha" value={newPass} onChange={e => setNewPass(e.target.value)} containerClassName="flex-1 mb-0" />
-                            <Button size="sm" onClick={() => { changePassword(newPass).then(() => { setNewPass(''); showNotification('Senha alterada!', 'success'); }); }}>Alterar</Button>
+            {pendingChange && (
+                <div className="p-4 mb-6 bg-blue-100 dark:bg-blue-900/30 border-l-4 border-blue-500 text-blue-800 dark:text-blue-200 rounded-md">
+                    <div className="flex items-center">
+                        <CalendarDaysIcon className="w-6 h-6 mr-3" />
+                        <div>
+                            <p className="font-bold">Alteração de Preço Agendada</p>
+                            <p>Novos preços entrarão em vigor em: <strong>{toDate(pendingChange.effectiveDate)?.toLocaleDateString('pt-BR')}</strong>.</p>
+                            <button onClick={() => setViewAffectedClientsModalOpen(true)} className="text-sm text-blue-600 dark:text-blue-300 hover:underline">
+                                Ver {pendingChange.affectedClients.length} cliente(s) afetado(s)
+                            </button>
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
 
-            {/* TABELA DE PREÇOS - SEU MODELO CORRETO */}
-            <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
-                <h3 className="text-xl font-black border-b pb-2 text-primary-600 uppercase tracking-tight">Tabela de Preços</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
-                    <Input label="Valor/KM" name="perKm" type="number" step="0.1" value={localSettings.pricing.perKm} onChange={e => handleSimpleChange(e, 'pricing')} />
-                    <Input label="Taxa Poço" name="wellWaterFee" type="number" value={localSettings.pricing.wellWaterFee} onChange={e => handleSimpleChange(e, 'pricing')} />
-                    <Input label="Taxa Produtos" name="productsFee" type="number" value={localSettings.pricing.productsFee} onChange={e => handleSimpleChange(e, 'pricing')} />
-                    <Input label="Taxa Festa" name="partyPoolFee" type="number" value={localSettings.pricing.partyPoolFee} onChange={e => handleSimpleChange(e, 'pricing')} />
+            <div className="space-y-8">
+                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <h3 className="text-xl font-semibold mb-4">Identidade Visual e Informações</h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                            <Input label="Nome da Empresa (para painéis)" name="companyName" value={localSettings.companyName} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Título Principal (Tela Inicial)" name="mainTitle" value={localSettings.mainTitle || ''} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Subtítulo (Tela Inicial)" name="mainSubtitle" value={localSettings.mainSubtitle || ''} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Chave PIX Padrão" name="pixKey" value={localSettings.pixKey} onChange={(e) => handleSimpleChange(e)} />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Logomarca da Empresa
+                            </label>
+                            {logoPreview && (
+                                <div className="h-24 w-full mb-2 border p-2 rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 flex items-center justify-center overflow-hidden">
+                                    <img
+                                        src={logoPreview}
+                                        alt="Preview da logo"
+                                        className="max-w-full max-h-full"
+                                        style={{
+                                            objectFit: localSettings.logoObjectFit,
+                                            transform: `scale(${localSettings.logoTransforms?.scale || 1}) rotate(${localSettings.logoTransforms?.rotate || 0}deg)`,
+                                            filter: `brightness(${localSettings.logoTransforms?.brightness || 1}) contrast(${localSettings.logoTransforms?.contrast || 1}) grayscale(${localSettings.logoTransforms?.grayscale || 0})`,
+                                            transition: 'transform 0.2s ease, filter 0.2s ease',
+                                        }}
+                                    />
+                                </div>
+                            )}
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <Input name="logo-upload" label="" type="file" accept="image/png, image/jpeg" onChange={handleLogoFileChange} containerClassName="flex-grow mb-0" />
+                                    {logoPreview && (
+                                        <Button variant="danger" size="sm" onClick={handleRemoveLogo} title="Remover Logo">
+                                            <TrashIcon className="w-4 h-4" />
+                                        </Button>
+                                    )}
+                                </div>
+                                {logoPreview && (
+                                    <>
+                                    <div className="mt-4">
+                                        <Select
+                                            label="Ajuste da Imagem da Logo"
+                                            name="logoObjectFit"
+                                            value={localSettings.logoObjectFit}
+                                            onChange={(e) => handleSimpleChange(e)}
+                                            options={[
+                                                { value: 'contain', label: 'Conter (mostrar imagem inteira)' },
+                                                { value: 'cover', label: 'Preencher (pode cortar)' },
+                                                { value: 'fill', label: 'Esticar (pode distorcer)' },
+                                                { value: 'scale-down', label: 'Reduzir para caber' }
+                                            ]}
+                                        />
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t dark:border-gray-600">
+                                        <h4 className="font-semibold mb-2">Ajustes da Imagem</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm">Zoom (Escala): {Number(localSettings.logoTransforms?.scale || 1).toFixed(2)}x</label>
+                                                <input type="range" min="0.5" max="2" step="0.05" name="scale"
+                                                    value={localSettings.logoTransforms?.scale || 1}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
+                                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm">Rotação: {localSettings.logoTransforms?.rotate}°</label>
+                                                <input type="range" min="-180" max="180" step="1" name="rotate"
+                                                    value={localSettings.logoTransforms?.rotate || 0}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
+                                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm">Preto e Branco: {Math.round((localSettings.logoTransforms?.grayscale || 0) * 100)}%</label>
+                                                <input type="range" min="0" max="1" step="0.05" name="grayscale"
+                                                    value={localSettings.logoTransforms?.grayscale || 0}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
+                                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm">Brilho: {Math.round((localSettings.logoTransforms?.brightness || 1) * 100)}%</label>
+                                                <input type="range" min="0" max="2" step="0.05" name="brightness"
+                                                    value={localSettings.logoTransforms?.brightness || 1}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
+                                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm">Contraste: {Math.round((localSettings.logoTransforms?.contrast || 1) * 100)}%</label>
+                                                <input type="range" min="0" max="2" step="0.05" name="contrast"
+                                                    value={localSettings.logoTransforms?.contrast || 1}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
+                                                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                     <fieldset className="mt-4 border p-4 rounded-md dark:border-gray-600">
+                        <legend className="px-2 font-semibold">Endereço da Empresa</legend>
+                        <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 mt-2">
+                            <Input
+                                containerClassName="sm:col-span-2"
+                                label="CEP"
+                                name="zip"
+                                value={localSettings.baseAddress.zip}
+                                onChange={handleAddressChange}
+                                placeholder="00000-000"
+                                pattern="[0-9]{5}-[0-9]{3}"
+                                title="Formato do CEP: 12345-678"
+                                maxLength={9}
+                            />
+                            <Input containerClassName="sm:col-span-4" label="Rua" name="street" value={localSettings.baseAddress.street} onChange={handleAddressChange} />
+                            <Input containerClassName="sm:col-span-2" label="Número" name="address.number" value={localSettings.baseAddress.number} onChange={handleAddressChange} />
+                            <Input containerClassName="sm:col-span-4" label="Bairro" name="neighborhood" value={localSettings.baseAddress.neighborhood} onChange={handleAddressChange} />
+                            <Input containerClassName="sm:col-span-4" label="Cidade" name="city" value={localSettings.baseAddress.city} onChange={handleAddressChange} />
+                            <Input containerClassName="sm:col-span-2" label="UF" name="state" value={localSettings.baseAddress.state} onChange={handleAddressChange} maxLength={2} />
+                        </div>
+                    </fieldset>
                 </div>
                 
-                <h4 className="font-black mb-4 text-xs uppercase text-gray-400 tracking-widest border-b dark:border-gray-700 pb-1">Faixas de Volume e Preço Base</h4>
-                <div className="space-y-2">
-                    {localSettings.pricing.volumeTiers.map((tier, i) => (
-                        <div key={i} className="flex items-center gap-3 bg-gray-50 dark:bg-gray-900/40 p-2 rounded-lg border border-gray-100 dark:border-gray-700">
-                            <Input label="" type="number" value={tier.min} onChange={e => {
-                                const t = [...localSettings.pricing.volumeTiers]; t[i].min = +e.target.value;
-                                setLocalSettings((p:any)=>({...p, pricing: {...p.pricing, volumeTiers: t}}));
-                            }} containerClassName="mb-0 w-28" className="font-bold text-center" />
-                            <span className="text-gray-400">-</span>
-                            <Input label="" type="number" value={tier.max} onChange={e => {
-                                const t = [...localSettings.pricing.volumeTiers]; t[i].max = +e.target.value;
-                                setLocalSettings((p:any)=>({...p, pricing: {...p.pricing, volumeTiers: t}}));
-                            }} containerClassName="mb-0 w-28" className="font-bold text-center" />
-                            <span className="font-bold text-gray-500 text-sm flex-shrink-0">L: R$</span>
-                            <Input label="" type="number" value={tier.price} onChange={e => {
-                                const t = [...localSettings.pricing.volumeTiers]; t[i].price = +e.target.value;
-                                setLocalSettings((p:any)=>({...p, pricing: {...p.pricing, volumeTiers: t}}));
-                            }} containerClassName="mb-0 w-28" className="font-black text-primary-600 text-center" />
-                            <button onClick={() => {
-                                const t = localSettings.pricing.volumeTiers.filter((_, idx) => idx !== i);
-                                setLocalSettings((p:any)=>({...p, pricing: {...p.pricing, volumeTiers: t}}));
-                            }} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors"><TrashIcon className="w-5 h-5"/></button>
+                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <h3 className="text-xl font-semibold mb-4">Configuração de Mensagens</h3>
+                    <div className="space-y-6">
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Template de Cobrança WhatsApp
+                                </label>
+                                <Button size="sm" variant="secondary" onClick={handleResetTemplate}>
+                                    <SparklesIcon className="w-4 h-4 mr-1 text-yellow-500" />
+                                    Restaurar Modelo Padrão
+                                </Button>
+                            </div>
+                            <textarea
+                                name="whatsappMessageTemplate"
+                                value={localSettings.whatsappMessageTemplate || ''}
+                                onChange={(e) => handleSimpleChange(e)}
+                                rows={5}
+                                className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2"
+                                placeholder="Olá {CLIENTE}, ..."
+                            />
+                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                                <p>Variáveis disponíveis para substituição:</p>
+                                <ul className="list-disc list-inside mt-1">
+                                    <li><strong>{`{CLIENTE}`}</strong>: Nome do Cliente</li>
+                                    <li><strong>{`{VALOR}`}</strong>: Valor da mensalidade</li>
+                                    <li><strong>{`{VENCIMENTO}`}</strong>: Data de vencimento</li>
+                                    <li><strong>{`{PIX}`}</strong>: Chave PIX</li>
+                                    <li><strong>{`{DESTINATARIO}`}</strong>: Nome do beneficiário (Dinâmico por cliente)</li>
+                                </ul>
+                            </div>
                         </div>
-                    ))}
-                    <Button size="sm" variant="secondary" className="mt-4" onClick={() => {
-                        const t = [...localSettings.pricing.volumeTiers, {min: 0, max: 0, price: 0}];
-                        setLocalSettings((p:any)=>({...p, pricing: {...p.pricing, volumeTiers: t}}));
-                    }}>+ Adicionar Faixa de Preço</Button>
+
+                         <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    Template de Aviso/Anúncio WhatsApp
+                                </label>
+                            </div>
+                            <textarea
+                                name="announcementMessageTemplate"
+                                value={localSettings.announcementMessageTemplate || ''}
+                                onChange={(e) => handleSimpleChange(e)}
+                                rows={6}
+                                className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 mb-2"
+                                placeholder="Atenção! ..."
+                            />
+                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                                <p>Variáveis disponíveis para substituição:</p>
+                                <ul className="list-disc list-inside mt-1">
+                                    <li><strong>{`{CLIENTE}`}</strong>: Nome do Cliente</li>
+                                    <li><strong>{`{LOGIN}`}</strong>: E-mail do cliente</li>
+                                    <li><strong>{`{SENHA}`}</strong>: Senha fictícia</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <BankManager appContext={appContext} />
+                <RecessManager appContext={appContext} />
+                <UserManager appContext={appContext} />
+
+                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <h3 className="text-xl font-semibold mb-4">Automações</h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                        <Input 
+                            label="Gerar sugestão de reposição quando estoque for menor ou igual a (unidades)" 
+                            name="replenishmentStockThreshold" 
+                            type="number" 
+                            value={localSettings.automation.replenishmentStockThreshold} 
+                            onChange={(e) => handleSimpleChange(e, 'automation')} 
+                        />
+                    </div>
+                </div>
+
+                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow relative">
+                    <fieldset>
+                        <div className="flex justify-between items-center mb-4">
+                             <h3 className="text-xl font-semibold">Precificação</h3>
+                             <Button 
+                                variant="secondary" 
+                                size="sm" 
+                                onClick={() => setIsImpactModalOpen(true)}
+                                className={impactAnalysis.length > 0 ? "border-yellow-500 text-yellow-600" : ""}
+                            >
+                                <CurrencyDollarIcon className="w-4 h-4 mr-1" />
+                                Visualizar Impacto ({impactAnalysis.length})
+                             </Button>
+                        </div>
+                        
+                        {impactAnalysis.length > 0 && (
+                            <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded flex justify-between items-center">
+                                <div>
+                                    <p className="text-sm font-bold text-blue-800 dark:text-blue-200">Simulação de Impacto em Tempo Real</p>
+                                    <p className="text-xs text-blue-700 dark:text-blue-300">Com estas alterações, o faturamento mensal variará em:</p>
+                                </div>
+                                <div className={`text-lg font-bold ${totalRevenueDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {totalRevenueDiff >= 0 ? '+' : ''}R$ {totalRevenueDiff.toFixed(2)}
+                                </div>
+                            </div>
+                        )}
+
+                        <p className="text-sm text-yellow-600 dark:text-yellow-400 mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-md">
+                            <strong>Atenção:</strong> Alterar as faixas de volume atualizará a calculadora de novos orçamentos imediatamente. 
+                            Você poderá escolher a data de início da vigência para clientes ativos ao clicar em Salvar.
+                        </p>
+                        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                            <Input label="Valor por KM" name="perKm" type="number" value={localSettings.pricing.perKm} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                            <Input label="Taxa Água de Poço" name="wellWaterFee" type="number" value={localSettings.pricing.wellWaterFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                            <Input label="Taxa de Produtos" name="productsFee" type="number" value={localSettings.pricing.productsFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                            <Input label="Taxa Piscina de Festa" name="partyPoolFee" type="number" value={localSettings.pricing.partyPoolFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                        </div>
+                        <h4 className="font-semibold mt-6 mb-2">Faixas de Preço por Volume</h4>
+                        {localSettings.pricing.volumeTiers.map((tier, index) => (
+                            <div key={index} className="flex items-center gap-2 mb-2">
+                            <span>De</span>
+                            <Input label="" type="number" value={tier.min} onChange={(e) => handleTierChange(index, 'min', +e.target.value)} containerClassName="mb-0" />
+                            <span>até</span>
+                            <Input label="" type="number" value={tier.max} onChange={(e) => handleTierChange(index, 'max', +e.target.value)} containerClassName="mb-0" />
+                            <span>litros, custa R$</span>
+                            <Input label="" type="number" value={tier.price} onChange={(e) => handleTierChange(index, 'price', +e.target.value)} containerClassName="mb-0" />
+                            <Button variant="danger" size="sm" onClick={() => removeTier(index)}><TrashIcon className="w-4 h-4"/></Button>
+                            </div>
+                        ))}
+                        <Button variant="secondary" size="sm" onClick={addTier}>Adicionar Faixa</Button>
+                    </fieldset>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-8">
+                    <PlanEditor title="Plano Simples" planKey="simple" plan={localSettings.plans.simple} setLocalSettings={setLocalSettings} />
+                    <FidelityPlanEditor localSettings={localSettings} setLocalSettings={setLocalSettings} />
+                </div>
+
+                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <h3 className="text-xl font-semibold mb-4">Gerenciamento de Funcionalidades</h3>
+                    <div className="space-y-4">
+                        <ToggleSwitch label="Ativar Plano VIP" enabled={localSettings.features.vipPlanEnabled} onChange={() => handleToggle('vipPlanEnabled')} />
+                        {!localSettings.features.vipPlanEnabled && (
+                            <div className="pl-8 mt-2">
+                                <Input label="Mensagem para Plano VIP desativado" name="vipPlanDisabledMessage" value={localSettings.features.vipPlanDisabledMessage || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                            </div>
+                        )}
+                        {localSettings.features.vipPlanEnabled && (
+                            <div className="pl-8 mt-2 space-y-2">
+                                <ToggleSwitch label="Permitir Solicitação de Upgrade de Plano pelo Cliente" enabled={localSettings.features.planUpgradeEnabled} onChange={() => handleToggle('planUpgradeEnabled')} />
+                                 <Input label="Título do Banner de Upgrade" name="vipUpgradeTitle" value={localSettings.features.vipUpgradeTitle || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                <Input label="Descrição do Banner de Upgrade" name="vipUpgradeDescription" value={localSettings.features.vipUpgradeDescription || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                            </div>
+                        )}
+                        <ToggleSwitch label="Ativar Loja para Clientes" enabled={localSettings.features.storeEnabled} onChange={() => handleToggle('storeEnabled')} />
+                        <ToggleSwitch label="Ativar Plano de Adiantamento" enabled={localSettings.features.advancePaymentPlanEnabled} onChange={() => handleToggle('advancePaymentPlanEnabled')} />
+                        
+                        {localSettings.features.advancePaymentPlanEnabled && (
+                            <div className="pl-8 mt-4 space-y-2">
+                                <div className="space-y-4 pt-4 border-t dark:border-gray-700">
+                                    <h4 className="font-semibold">Textos do Banner Promocional</h4>
+                                     <Input label="Título do Banner" name="advancePaymentTitle" value={localSettings.features.advancePaymentTitle || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                     <Input label="Subtítulo (Plano VIP)" name="advancePaymentSubtitleVIP" value={localSettings.features.advancePaymentSubtitleVIP || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                     <Input label="Subtítulo (Plano Simples)" name="advancePaymentSubtitleSimple" value={localSettings.features.advancePaymentSubtitleSimple || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                </div>
+                                <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md text-sm mt-6">
+                                    <p><strong>Status da Adesão:</strong></p>
+                                    <p>{advancePlanUsage.count} de {activeClientsCount} clientes ativos aderiram ({advancePlanUsage.percentage.toFixed(2)}%).</p>
+                                </div>
+                                <div className="space-y-4 pt-4 border-t dark:border-gray-700">
+                                    <h4 className="font-semibold">Opções de Adiantamento</h4>
+                                    {localSettings.advancePaymentOptions.map((option, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                            <span>Pagar</span>
+                                            <Input label="" type="number" value={option.months} onChange={(e) => handleAdvanceOptionChange(index, 'months', +e.target.value)} containerClassName="mb-0 w-20" />
+                                            <span>meses com</span>
+                                            <Input label="" type="number" value={option.discountPercent} onChange={(e) => handleAdvanceOptionChange(index, 'discountPercent', +e.target.value)} containerClassName="mb-0 w-20" />
+                                            <span>% de desconto</span>
+                                            <Button variant="danger" size="sm" onClick={() => removeAdvanceOption(index)}><TrashIcon className="w-4 h-4"/></Button>
+                                        </div>
+                                    ))}
+                                    <Button variant="secondary" size="sm" onClick={addAdvanceOption}>Adicionar Opção</Button>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="pt-4 mt-4 border-t dark:border-gray-700">
+                             <ToggleSwitch label="Modo Manutenção" enabled={localSettings.features.maintenanceModeEnabled} onChange={() => handleToggle('maintenanceModeEnabled')} />
+                            {localSettings.features.maintenanceModeEnabled && (
+                                <div className="pl-8 mt-2">
+                                    <Input label="Mensagem de Manutenção" name="maintenanceMessage" value={localSettings.features.maintenanceMessage || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <h3 className="text-xl font-semibold mb-4">Minha Conta</h3>
+                     <form onSubmit={handlePasswordChange} className="space-y-4">
+                        <h4 className="font-semibold">Alterar Senha</h4>
+                        <div className="grid md:grid-cols-3 gap-4 items-end">
+                             <Input label="Nova Senha" type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} containerClassName="mb-0" />
+                             <Input label="Confirmar Nova Senha" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} containerClassName="mb-0" />
+                             <Button type="submit" isLoading={isSavingPassword}>Salvar Nova Senha</Button>
+                        </div>
+                    </form>
                 </div>
             </div>
+            
+            {isPriceChangeModalOpen && (
+                <Modal
+                    isOpen={isPriceChangeModalOpen}
+                    onClose={() => setIsPriceChangeModalOpen(false)}
+                    title="Configurar Vigência do Novo Preço"
+                    size="lg"
+                    footer={
+                        <>
+                            <Button variant="secondary" onClick={() => setIsPriceChangeModalOpen(false)}>Cancelar</Button>
+                            <Button onClick={handleConfirmPriceChange} isLoading={isSaving}>
+                                {priceEffectType === 'immediate' ? 'Aplicar Imediatamente' : 'Agendar Mudança'}
+                            </Button>
+                        </>
+                    }
+                >
+                    <div className="space-y-6">
+                        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-500 rounded text-sm">
+                            <p className="font-bold text-yellow-800 dark:text-yellow-200 mb-1">Impacto Financeiro:</p>
+                            <p>Esta alteração afetará <strong>{affectedClientsPreview.length}</strong> clientes ativos do Plano Simples.</p>
+                            <p className={`font-bold mt-1 ${totalRevenueDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                Variação estimada: {totalRevenueDiff >= 0 ? '+' : ''}R$ {totalRevenueDiff.toFixed(2)} / mês.
+                            </p>
+                        </div>
 
-            {isPriceModalOpen && (
-                <Modal isOpen={isPriceModalOpen} onClose={() => setIsPriceModalOpen(false)} title="Vigência dos Preços">
-                    <p className="text-sm text-gray-500 mb-4">Escolha a data para os novos preços entrarem em vigor para os clientes ativos.</p>
-                    <Input label="Data de Início" type="date" value={customEffectiveDate} onChange={e => setCustomEffectiveDate(e.target.value)} />
-                    <div className="flex justify-end mt-4"><Button onClick={handleConfirmPrice}>Agendar Mudança</Button></div>
+                        <fieldset className="space-y-4">
+                            <legend className="font-bold text-gray-700 dark:text-gray-300">Quando as novas regras entram em vigor?</legend>
+                            
+                            <label className="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                <input 
+                                    type="radio" 
+                                    name="effectType" 
+                                    checked={priceEffectType === 'immediate'} 
+                                    onChange={() => setPriceEffectType('immediate')}
+                                />
+                                <div>
+                                    <p className="font-bold">Imediato</p>
+                                    <p className="text-xs text-gray-500">Vale para todos os novos orçamentos e próximos ciclos de pagamento.</p>
+                                </div>
+                            </label>
+
+                            <label className="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                <input 
+                                    type="radio" 
+                                    name="effectType" 
+                                    checked={priceEffectType === 'scheduled'} 
+                                    onChange={() => setPriceEffectType('scheduled')}
+                                />
+                                <div className="flex-grow">
+                                    <p className="font-bold">Data Agendada</p>
+                                    <p className="text-xs text-gray-500">Os clientes serão notificados e o valor só mudará na data escolhida.</p>
+                                </div>
+                            </label>
+
+                            {priceEffectType === 'scheduled' && (
+                                <div className="pl-8 animate-fade-in">
+                                    <Input 
+                                        label="Escolha a data de início" 
+                                        type="date" 
+                                        value={customEffectiveDate} 
+                                        onChange={(e) => setCustomEffectiveDate(e.target.value)}
+                                        min={new Date().toISOString().split('T')[0]}
+                                    />
+                                </div>
+                            )}
+                        </fieldset>
+
+                        <div className="mt-4 p-2 border rounded-md max-h-40 overflow-y-auto bg-gray-50 dark:bg-gray-700">
+                            <p className="text-xs font-bold mb-1 uppercase text-gray-400">Clientes que receberão o reajuste:</p>
+                            {affectedClientsPreview.length > 0 ? (
+                                <ul className="list-disc list-inside text-sm">
+                                    {affectedClientsPreview.map(c => <li key={c.id}>{c.name}</li>)}
+                                </ul>
+                            ) : (
+                                <p className="text-sm italic">Nenhum cliente ativo será afetado.</p>
+                            )}
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {pendingChange && viewAffectedClientsModalOpen && (
+                <Modal
+                    isOpen={viewAffectedClientsModalOpen}
+                    onClose={() => setViewAffectedClientsModalOpen(false)}
+                    title="Clientes Afetados"
+                    size="lg"
+                    footer={<Button onClick={() => setViewAffectedClientsModalOpen(false)}>Fechar</Button>}
+                >
+                    <p>Clientes afetados pela mudança de <strong>{toDate(pendingChange.effectiveDate)?.toLocaleDateString('pt-BR')}</strong>:</p>
+                    <div className="mt-2 p-2 border rounded-md max-h-60 overflow-y-auto bg-gray-50 dark:bg-gray-700">
+                        <ul className="list-disc list-inside">
+                            {pendingChange.affectedClients.map(c => <li key={c.id}>{c.name}</li>)}
+                        </ul>
+                    </div>
+                </Modal>
+            )}
+            
+            {isImpactModalOpen && (
+                <Modal
+                    isOpen={isImpactModalOpen}
+                    onClose={() => setIsImpactModalOpen(false)}
+                    title="Simulação de Impacto Financeiro"
+                    size="xl"
+                    footer={<Button onClick={() => setIsImpactModalOpen(false)}>Fechar</Button>}
+                >
+                    <div className="mb-4 p-4 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                        <div className="flex justify-between items-center">
+                            <span className="font-semibold">Total de Clientes Afetados:</span>
+                            <span>{impactAnalysis.length}</span>
+                        </div>
+                        <div className="flex justify-between items-center mt-2">
+                            <span className="font-semibold">Variação Total no Faturamento:</span>
+                            <span className={`font-bold text-lg ${totalRevenueDiff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {totalRevenueDiff >= 0 ? '+' : ''}R$ {totalRevenueDiff.toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm">
+                            <thead className="bg-gray-50 dark:bg-gray-800 border-b dark:border-gray-600">
+                                <tr>
+                                    <th className="px-4 py-2 text-left">Cliente</th>
+                                    <th className="px-4 py-2 text-right">Valor Atual</th>
+                                    <th className="px-4 py-2 text-right">Novo Valor</th>
+                                    <th className="px-4 py-2 text-right">Diferença</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                {impactAnalysis.map(item => (
+                                    <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                        <td className="px-4 py-2 font-medium">{item.name}</td>
+                                        <td className="px-4 py-2 text-right">R$ {item.currentFee.toFixed(2)}</td>
+                                        <td className="px-4 py-2 text-right font-bold">R$ {item.newFee.toFixed(2)}</td>
+                                        <td className={`px-4 py-2 text-right font-bold ${item.diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            {item.diff >= 0 ? '+' : ''}R$ {item.diff.toFixed(2)} ({item.percent.toFixed(1)}%)
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </Modal>
             )}
         </div>

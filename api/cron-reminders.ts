@@ -7,8 +7,7 @@ import * as admin from 'firebase-admin';
  * Este endpoint deve ser chamado via Cron Job.
  * Ele gera as mensagens e marca o ciclo como processado.
  * 
- * ATUALIZAÇÃO: MODO DRY-RUN E TRAVAS DE SEGURANÇA.
- * ADIÇÃO: SUPORTE DINÂMICO A {EMPRESA} E {DESTINATARIO}
+ * ATUALIZAÇÃO: RESOLUÇÃO ESTRITA DE DESTINATÁRIO (Sem fallback global).
  */
 
 if (!admin.apps.length) {
@@ -27,17 +26,24 @@ const db = admin.firestore();
 function parseMessage(template: string, data: Record<string, string>, settings: any, client: any) {
     let msg = template || "";
     
-    // Resolução de {EMPRESA} (quem cobra)
-    // 1. settings.billingCompanyName -> 2. settings.companyName -> Fallback
+    // 1️⃣ Resolução de {EMPRESA} (quem cobra)
+    // Regra: settings.billingCompanyName -> settings.companyName -> Fallback fixo
     const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
     
-    // Resolução de {DESTINATARIO} (quem recebe) - DINÂMICO POR CLIENTE
-    // 1. client.pixKeyRecipient -> 2. settings.pixKeyRecipient -> 3. settings.companyName -> Fallback
-    const recipientName = client?.pixKeyRecipient || settings?.pixKeyRecipient || settings?.companyName || "Não informado";
+    // 2️⃣ Resolução de {DESTINATARIO} (quem recebe) - ESTRITAMENTE POR CLIENTE
+    // Regra: client.payment.recipientName -> Se ausente, retorna null para indicar erro crítico
+    const recipientName = client?.payment?.recipientName;
 
-    // Substituições de variáveis dinâmicas do robô
+    // Se o template usa {DESTINATARIO} mas o valor está vazio/ausente, abortamos a mensagem retornando null
+    if (msg.includes('{DESTINATARIO}') && (!recipientName || recipientName.trim() === "")) {
+        return null; 
+    }
+
+    // Substituições prioritárias
     msg = msg.replace(/{EMPRESA}/g, companyName);
-    msg = msg.replace(/{DESTINATARIO}/g, recipientName);
+    if (recipientName) {
+        msg = msg.replace(/{DESTINATARIO}/g, recipientName);
+    }
 
     // Outras variáveis dinâmicas do objeto data
     Object.entries(data).forEach(([key, val]) => {
@@ -60,19 +66,15 @@ export default async function handler(req: any, res: any) {
 
         if (!bot?.enabled) return res.status(200).json({ status: "Robot is off" });
 
-        // 1️⃣ MODO DO ROBÔ E DATA TESTE
         const robotMode = bot.robotMode || 'dry-run';
         const robotTestDateStr = bot.robotTestDate;
         const now = robotTestDateStr ? new Date(robotTestDateStr + 'T12:00:00') : new Date();
         const currentCycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
         
-        // Alvo: Vencimento em 2 dias com base na data do robô (real ou teste)
         const targetDate = new Date(now);
         targetDate.setDate(now.getDate() + 2);
         const targetDateStr = targetDate.toISOString().split('T')[0];
 
-        // 2️⃣ LIMITE DE SEGURANÇA
-        // Em dry-run o limite é sempre 1. Em live, usa o configurado ou 1 por padrão.
         const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : (bot.maxClientsPerRun || 1);
 
         const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
@@ -84,15 +86,13 @@ export default async function handler(req: any, res: any) {
             const client = doc.data();
             const clientId = doc.id;
 
-            // 3️⃣ TRAVA DE CICLO (Ignora se já processado real no ciclo atual)
             if (client.payment?.lastBillingCycle === currentCycle && robotMode === 'live') continue;
-            // Pula se já pagou
             if (client.payment?.status === 'Pago') continue;
 
             const dueDateStr = String(client.payment?.dueDate).split('T')[0];
 
             if (dueDateStr === targetDateStr) {
-                // GERA A MENSAGEM FINAL PASSANDO SETTINGS E CLIENT PARA RESOLVER VARS
+                // TENTA GERAR A MENSAGEM COM VALIDAÇÃO ESTRITA
                 const finalMessage = parseMessage(bot.billingReminder, {
                     'CLIENTE': client.name.split(' ')[0],
                     'VALOR': "consulte seu painel", 
@@ -100,7 +100,22 @@ export default async function handler(req: any, res: any) {
                     'PIX': client.pixKey || settings?.pixKey || "Chave no painel"
                 }, settings, client);
 
-                // 4️⃣ REGISTRO DE PREVIEW (OBRIGATÓRIO PARA AMBOS OS MODOS)
+                // SE A MENSAGEM RETORNOU NULL, É ERRO DE DESTINATÁRIO
+                if (finalMessage === null) {
+                    await db.collection('robotPreviews').add({
+                        clientId: clientId,
+                        clientName: client.name,
+                        phone: client.phone || 'N/A',
+                        messageFinal: "ERRO: Campo {DESTINATARIO} exigido no template mas não configurado no pagamento do cliente.",
+                        dueDate: client.payment.dueDate,
+                        generatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        status: 'Error'
+                    });
+                    console.error(`[ROBOT ERROR] Cliente ${client.name} ignorado: Destinatário ausente.`);
+                    continue; // Pula para o próximo cliente
+                }
+
+                // REGISTRO DE PREVIEW/LOG SUCESSO
                 const previewData = {
                     clientId: clientId,
                     clientName: client.name,
@@ -113,17 +128,12 @@ export default async function handler(req: any, res: any) {
 
                 await db.collection('robotPreviews').add(previewData);
 
-                // 5️⃣ REGRA FINAL DE ENVIO REAL
                 if (robotMode === 'live') {
-                    // SALVA NO FIREBASE PARA O SOCKET EXTERNO CONSUMIR
                     await db.collection('clients').doc(clientId).update({
                         'payment.lastBillingNotificationRomantic': finalMessage,
                         'payment.lastBillingCycle': currentCycle,
                         'payment.generatedAt': admin.firestore.FieldValue.serverTimestamp()
                     });
-                } else {
-                    // Em dry-run, apenas logamos que a mensagem foi gerada para preview
-                    console.log(`[DRY-RUN] Mensagem gerada para ${client.name}: ${finalMessage}`);
                 }
 
                 count++;

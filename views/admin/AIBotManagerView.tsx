@@ -30,7 +30,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
         robotMode: 'dry-run' as 'dry-run' | 'live',
         robotTestDate: null as string | null,
         maxClientsPerRun: 1,
-        billingReminder: "Olá {CLIENTE}! 🏊‍♂️ Passando para lembrar do vencimento da sua manutenção no dia {VENCIMENTO}. Valor: R$ {VALOR}. Atenciosamente, {EMPRESA}.",
+        billingReminder: "Olá {CLIENTE}! 🏊‍♂️ Passando para lembrar do vencimento da sua manutenção no dia {VENCIMENTO}. Valor: R$ {VALOR}. Realizar o PIX para {DESTINATARIO}. Atenciosamente, {EMPRESA}.",
         overdueNotice: "Olá {CLIENTE}! Identificamos um atraso no pagamento de {VENCIMENTO}. Favor realizar o PIX para {DESTINATARIO}. Chave: {PIX}",
     });
 
@@ -72,9 +72,10 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
         return `${d.getFullYear()}-${d.getMonth() + 1}`;
     }, [botConfig.robotTestDate]);
 
-    const VariableBadge = ({ name, description }: { name: string, description?: string }) => (
-        <span className="group relative text-[10px] bg-primary-100 text-primary-700 px-2 py-0.5 rounded font-mono font-bold cursor-help" title={description}>
+    const VariableBadge = ({ name, description, critical }: { name: string, description?: string, critical?: boolean }) => (
+        <span className={`group relative text-[10px] px-2 py-0.5 rounded font-mono font-bold cursor-help ${critical ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-primary-100 text-primary-700'}`} title={description}>
             {`{${name}}`}
+            {critical && <span className="ml-1">⚠️</span>}
         </span>
     );
 
@@ -139,22 +140,22 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     </div>
                                 ) : (
                                     robotPreviews.map(log => (
-                                        <div key={log.id} className={`p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border-l-4 shadow-sm ${log.status === 'Sent' ? 'border-green-500' : 'border-amber-400'}`}>
+                                        <div key={log.id} className={`p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border-l-4 shadow-sm ${log.status === 'Sent' ? 'border-green-500' : log.status === 'Error' ? 'border-red-600 bg-red-50 dark:bg-red-900/10' : 'border-amber-400'}`}>
                                             <div className="flex justify-between items-start mb-2">
                                                 <div>
-                                                    <span className="font-black text-sm block">{log.clientName}</span>
+                                                    <span className={`font-black text-sm block ${log.status === 'Error' ? 'text-red-700 dark:text-red-400' : ''}`}>{log.clientName}</span>
                                                     <span className="text-[10px] text-gray-400 font-mono uppercase">WhatsApp: {log.phone}</span>
                                                 </div>
                                                 <div className="text-right">
-                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${log.status === 'Sent' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                        {log.status === 'Sent' ? '🟢 ENVIADO' : '🟡 SIMULAÇÃO'}
+                                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${log.status === 'Sent' ? 'bg-green-100 text-green-700' : log.status === 'Error' ? 'bg-red-200 text-red-800' : 'bg-amber-100 text-amber-700'}`}>
+                                                        {log.status === 'Sent' ? '🟢 ENVIADO' : log.status === 'Error' ? '❌ ERRO CRÍTICO' : '🟡 SIMULAÇÃO'}
                                                     </span>
                                                     <p className="text-[9px] text-gray-400 mt-1">
                                                         {toDate(log.generatedAt)?.toLocaleString('pt-BR')}
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="p-3 bg-white dark:bg-gray-800 rounded border dark:border-gray-700 text-xs italic text-gray-600 dark:text-gray-300">
+                                            <div className={`p-3 rounded border text-xs italic ${log.status === 'Error' ? 'bg-red-100 border-red-300 text-red-900' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300'}`}>
                                                 "{log.messageFinal}"
                                             </div>
                                             <p className="text-[9px] text-gray-400 mt-2 text-right">Referência de Vencimento: {new Date(log.dueDate).toLocaleDateString('pt-BR')}</p>
@@ -181,8 +182,8 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     onChange={e => setBillingInfo(p => ({...p, billingCompanyName: e.target.value}))}
                                     placeholder={settings?.companyName || "Nome Padrão"}
                                 />
-                                <p className="text-[10px] text-gray-500 italic">
-                                    Nota: O campo de Destinatário agora é dinâmico e resolvido através dos dados de pagamento de cada cliente.
+                                <p className="text-[10px] text-red-600 font-bold bg-red-50 p-2 rounded border border-red-100">
+                                    TRAVA ATIVA: A variável {`{DESTINATARIO}`} é obrigatória e deve ser configurada individualmente no pagamento de cada cliente para evitar erros financeiros.
                                 </p>
                             </div>
                             <div className="space-y-4">
@@ -247,9 +248,9 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                     <VariableBadge name="CLIENTE" description="Primeiro nome do cliente" /> 
                                     <VariableBadge name="VALOR" description="Valor da manutenção (no painel)" /> 
                                     <VariableBadge name="VENCIMENTO" description="Data de vencimento formatada" /> 
-                                    <VariableBadge name="PIX" description="Chave PIX (Cliente > Banco > Global)" /> 
-                                    <VariableBadge name="EMPRESA" description="Identidade de cobrança global" /> 
-                                    <VariableBadge name="DESTINATARIO" description="Nome do beneficiário (Dinâmico por cliente)" />
+                                    <VariableBadge name="PIX" description="Chave PIX do cliente ou banco" /> 
+                                    <VariableBadge name="EMPRESA" description="Identidade de cobrança global (quem cobra)" /> 
+                                    <VariableBadge name="DESTINATARIO" description="NOME OBRIGATÓRIO NO CADASTRO DO CLIENTE (quem recebe)" critical={true} />
                                 </div>
                             </div>
 

@@ -139,8 +139,8 @@ export interface Client {
     payment: {
         status: PaymentStatus;
         dueDate: string;
-        // Campos para o Robô Real (App B)
-        lastBillingCycle?: string; // Ex: "2023-10"
+        recipientName?: string;
+        lastBillingCycle?: string;
         lastBillingNotificationRomantic?: any; 
     };
     stock: ClientProduct[];
@@ -295,7 +295,7 @@ export interface RobotPreview {
     messageFinal: string;
     dueDate: string;
     generatedAt: any;
-    status: 'Simulation' | 'Sent';
+    status: 'Simulation' | 'Sent' | 'Error';
 }
 
 export interface Settings {
@@ -308,7 +308,6 @@ export interface Settings {
     logoTransforms?: LogoTransforms;
     baseAddress: Address;
     pixKey: string;
-    pixKeyRecipient?: string;
     googleReviewUrl?: string;
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
