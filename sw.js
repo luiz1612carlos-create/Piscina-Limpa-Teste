@@ -1,13 +1,14 @@
-const CACHE_NAME = "piscina-limpa-v40";
+const CACHE_NAME = "piscina-limpa-v50";
 
 const APP_SHELL_FILES = [
+  './',
   './index.html',
   './manifest.json',
-  './styles.css'
+  './index.css'
 ];
 
 self.addEventListener("install", event => {
-  console.log(`[SW v40] Instalando...`);
+  console.log(`[SW v50] Instalando...`);
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll(APP_SHELL_FILES);
@@ -17,7 +18,7 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("activate", event => {
-  console.log("[SW v40] Ativando e limpando caches antigos...");
+  console.log("[SW v50] Ativando e limpando caches antigos...");
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
@@ -52,7 +53,7 @@ self.addEventListener("fetch", event => {
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
           return response;
         })
-        .catch(() => caches.match('./index.html'))
+        .catch(() => caches.match('./index.html') || caches.match('/index.html'))
     );
     return;
   }

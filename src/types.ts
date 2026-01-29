@@ -16,8 +16,9 @@ export type ReplenishmentQuoteStatus = 'suggested' | 'sent' | 'approved' | 'reje
 export type AdvancePaymentRequestStatus = 'pending' | 'approved' | 'rejected';
 export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
+export type EmergencyStatus = 'pending' | 'resolved';
 
-export type AdminView = 'reports' | 'approvals' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings';
+export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
 
 export interface Address {
     street: string;
@@ -78,6 +79,35 @@ export interface Visit {
     photoUrl?: string;
 }
 
+export interface EmergencyRequest {
+    id: string;
+    clientId: string;
+    clientName: string;
+    clientPhone: string;
+    address: string;
+    reason: string;
+    status: EmergencyStatus;
+    createdAt: any;
+}
+
+export interface ChatMessage {
+    id: string;
+    text: string;
+    sender: 'bot' | 'client' | 'admin';
+    timestamp: any;
+}
+
+export interface ChatSession {
+    id: string;
+    clientName: string;
+    clientPhone: string;
+    lastMessage: string;
+    lastMessageAt: any;
+    status: 'bot' | 'waiting' | 'human' | 'closed';
+    unreadCount: number;
+    messages?: ChatMessage[];
+}
+
 export interface ScheduledPlanChange {
     newPlan: PlanType;
     newPrice: number;
@@ -108,6 +138,9 @@ export interface Client {
     payment: {
         status: PaymentStatus;
         dueDate: string;
+        // Campos para o Robô Real (App B)
+        lastBillingNotificationRomantic?: any; 
+        lastBillingCycle?: string; // Ex: "2023-10"
     };
     stock: ClientProduct[];
     pixKey?: string;
@@ -263,11 +296,14 @@ export interface Settings {
     baseAddress: Address;
     pixKey: string;
     pixKeyRecipient?: string;
+    googleReviewUrl?: string;
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
+    priceReadjustmentMessageTemplate?: string;
     termsUpdatedAt?: any;
     pricing: {
         perKm: number;
+        serviceRadius: number;
         wellWaterFee: number;
         productsFee: number;
         partyPoolFee: number;
@@ -309,6 +345,24 @@ export interface Settings {
     };
     advancePaymentOptions: AdvancePaymentOption[];
     recessPeriods?: RecessPeriod[];
+    aiBot?: {
+        enabled: boolean;
+        billingReminder: string;
+        overdueNotice: string;
+        lastCronRun?: any;
+        name?: string;
+        welcomeRegistered?: string;
+        menuRegistered?: string;
+        welcomeUnregistered?: string;
+        menuUnregistered?: string;
+        accessPanelMessage?: string;
+        schedulePartyMessage?: string;
+        planInfoMessage?: string;
+        quoteInstructionsMessage?: string;
+        plansOverviewMessage?: string;
+        humanHandoffMessage?: string;
+        invoiceMessage?: string;
+    };
 }
 
 export type PricingSettings = Settings['pricing'];
@@ -357,6 +411,8 @@ export interface AppData {
     advancePaymentRequests: AdvancePaymentRequest[];
     planChangeRequests: PlanChangeRequest[];
     poolEvents: PoolEvent[];
+    emergencyRequests: EmergencyRequest[];
+    chatSessions: ChatSession[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
     loading: {
@@ -375,6 +431,8 @@ export interface AppData {
         pendingPriceChanges: boolean;
         poolEvents: boolean;
         planChangeRequests: boolean;
+        emergencyRequests: boolean;
+        chatSessions: boolean;
     };
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;
@@ -424,4 +482,8 @@ export interface AppData {
     cancelPlanChangeRequest: (requestId: string) => Promise<void>;
     cancelScheduledPlanChange: (clientId: string) => Promise<void>;
     acknowledgeTerms: (clientId: string) => Promise<void>;
+    createEmergencyRequest: (data: Omit<EmergencyRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>;
+    resolveEmergencyRequest: (requestId: string) => Promise<void>;
+    sendAdminChatMessage: (sessionId: string, text: string) => Promise<void>;
+    closeChatSession: (sessionId: string) => Promise<void>;
 }

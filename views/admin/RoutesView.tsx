@@ -47,7 +47,8 @@ const RoutesView: React.FC<RoutesViewProps> = ({ appContext }) => {
     const handleToggleRoute = async (day: keyof Routes, currentStatus: boolean) => {
          try {
             await toggleRouteStatus(String(day), !currentStatus);
-            showNotification(`Rota de ${day} ${!currentStatus ? 'iniciada' : 'finalizada'}.`, 'success');
+            // FIX: Wrapped day in String() to resolve implicit conversion error.
+            showNotification(`Rota de ${String(day)} ${!currentStatus ? 'iniciada' : 'finalizada'}.`, 'success');
         } catch (error: any) {
             showNotification(error.message || 'Erro ao atualizar status da rota.', 'error');
         }

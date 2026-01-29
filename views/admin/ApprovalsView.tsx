@@ -51,24 +51,26 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
         setProcessingId(approvalBudget.id);
         try {
             await approveBudgetQuote(approvalBudget.id, password, distance);
-            showNotification('Orçamento aprovado com sucesso!', 'success');
+            showNotification('Cliente criado e acesso liberado!', 'success');
+            // Fechar apenas após sucesso
             setApprovalBudget(null);
             setPassword('');
-            setDistance(0);
         } catch (error: any) {
-            showNotification(error.message || 'Erro ao aprovar orçamento.', 'error');
+            console.error("Erro capturado no componente:", error);
+            showNotification(error.message || 'Falha ao processar aprovação.', 'error');
         } finally {
             setProcessingId(null);
         }
     };
 
     const handleReject = async (budgetId: string) => {
+        if (!window.confirm("Tem certeza que deseja excluir este orçamento?")) return;
         setProcessingId(budgetId);
         try {
             await rejectBudgetQuote(budgetId);
-            showNotification('Orçamento rejeitado.', 'info');
+            showNotification('Orçamento removido.', 'info');
         } catch (error: any) {
-            showNotification(error.message || 'Erro ao rejeitar orçamento.', 'error');
+            showNotification('Erro ao remover.', 'error');
         } finally {
             setProcessingId(null);
         }
@@ -238,11 +240,11 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
             {approvalBudget && (
                 <Modal
                     isOpen={!!approvalBudget}
-                    onClose={() => setApprovalBudget(null)}
+                    onClose={() => !processingId && setApprovalBudget(null)}
                     title={`Aprovar Orçamento: ${approvalBudget.name}`}
                     footer={
                         <>
-                            <Button variant="secondary" onClick={() => setApprovalBudget(null)}>Cancelar</Button>
+                            <Button variant="secondary" onClick={() => setApprovalBudget(null)} disabled={!!processingId}>Cancelar</Button>
                             <Button onClick={handleConfirmApprove} isLoading={processingId === approvalBudget.id}>Confirmar</Button>
                         </>
                     }
@@ -270,12 +272,15 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
                         </Button>
                     </div>
                     <Input
-                        label="Senha Inicial"
+                        label="Senha Inicial do Cliente"
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Mínimo 6 caracteres"
                     />
+                    <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-800 dark:text-blue-200">
+                        <strong>Info:</strong> Ao aprovar, o cliente será movido para a aba "Clientes", uma conta de login será criada e ele receberá acesso ao painel.
+                    </div>
                 </Modal>
             )}
             
@@ -400,7 +405,13 @@ const NewClientBudgetCard = ({ budget, processingId, onApprove, onReject }: { bu
             </p>
         </CardContent>
         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex justify-between items-center">
-            <Button size="sm" variant="danger" onClick={() => onReject(budget.id)} isLoading={processingId === budget.id} disabled={!!processingId}>Recusar</Button>
+            <button 
+                className="text-red-600 hover:text-red-800 text-sm font-bold uppercase tracking-tighter" 
+                onClick={() => onReject(budget.id)} 
+                disabled={!!processingId}
+            >
+                Excluir
+            </button>
             <Button size="sm" onClick={() => onApprove(budget.id)} isLoading={processingId === budget.id} disabled={!!processingId}>Aprovar</Button>
         </div>
     </>

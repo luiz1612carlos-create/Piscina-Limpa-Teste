@@ -1,16 +1,15 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTheme } from './hooks/useTheme';
 import { useAuth } from './hooks/useAuth';
 import { useAppData } from './hooks/useAppData';
 import LoginView from './views/public/LoginView';
-import PreBudgetView from './views/public/PreBudgetView';
 import AdminLayout from './views/admin/AdminLayout';
 import ClientLayout from './views/client/ClientLayout';
 import TechnicianLayout from './views/technician/TechnicianLayout';
 import { Spinner } from './components/Spinner';
 import { Notification } from './components/Notification';
-import { NotificationType, Settings } from './types';
+import { NotificationType } from './types';
 import { MoonIcon, SunIcon, SettingsIcon, LogoutIcon } from './constants';
 import SetupView from './views/public/SetupView';
 import { Button } from './components/Button';
@@ -20,18 +19,21 @@ const App: React.FC = () => {
     const { user, userData, loading: authLoading, isAnonymous, login, logout, changePassword } = useAuth();
     const appData = useAppData(user, userData);
 
-    const [notification, setNotification] = useState<{ message: string; type: NotificationType } | null>(null);
-    const [isLoginView, setIsLoginView] = useState(true);
+    const [notification, setNotification] = React.useState<{ message: string; type: NotificationType } | null>(null);
 
     const showNotification = useCallback((message: string, type: NotificationType) => {
         setNotification({ message, type });
         setTimeout(() => setNotification(null), 3000);
     }, []);
 
-    const authContextValue = { user, userData, login, logout, changePassword, showNotification };
-    const appContextValue = { ...appData, showNotification };
+    const authContextValue = useMemo(() => ({ 
+        user, userData, login, logout, changePassword, showNotification 
+    }), [user, userData, login, logout, changePassword, showNotification]);
+
+    const appContextValue = useMemo(() => ({ 
+        ...appData, showNotification 
+    }), [appData, showNotification]);
     
-    // 1. Verificação de Setup Inicial (Admin existe?)
     if (appData.setupCheck === 'checking') {
         return <div className="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900"><Spinner size="lg" /></div>;
     }
@@ -45,11 +47,9 @@ const App: React.FC = () => {
         );
     }
 
-    // 2. Lógica de Carregamento de Autenticação
-    // FIX: Se o usuário for anônimo, não esperamos por userData (pois ele não existe para anônimos)
     const isWaitingForUserData = user && !isAnonymous && !userData;
     
-    if (authLoading || isWaitingForUserData) {
+    if (authLoading || isWaitingForUserData || (user && appData.loading.settings)) {
         return <div className="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900"><Spinner size="lg" /></div>;
     }
 
@@ -60,18 +60,14 @@ const App: React.FC = () => {
     );
 
     const renderContent = () => {
-        // Modo Manutenção
         if (userData?.role === 'client' && appData.settings?.features.maintenanceModeEnabled) {
-            if (appData.loading.clients) {
-                return <div className="h-screen w-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900"><Spinner size="lg" /></div>;
-            }
             const currentClient = appData.clients.find(c => c.uid === user.uid);
             if (!currentClient?.allowAccessInMaintenance) {
                 return (
                     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-center p-4 text-center">
                         <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full">
                             <div className="flex justify-center mb-6">
-                                <SettingsIcon className="w-24 h-24 text-yellow-500 animate-spin-slow" style={{ animationDuration: '3s' }} />
+                                <SettingsIcon className="w-24 h-24 text-yellow-500 animate-spin-slow" />
                             </div>
                             <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4">Em Manutenção</h2>
                             <p className="text-gray-600 dark:text-gray-400 mb-6">
@@ -89,32 +85,24 @@ const App: React.FC = () => {
             }
         }
 
-        // Layouts por Perfil
-        if (userData?.role === 'admin') {
-            return <AdminLayout authContext={authContextValue} appContext={appContextValue} />;
-        }
-        if (userData?.role === 'technician') {
-            return <TechnicianLayout authContext={authContextValue} appContext={appContextValue} />;
-        }
-        if (userData?.role === 'client') {
-            return <ClientLayout authContext={authContextValue} appContext={appContextValue} />;
-        }
+        if (userData?.role === 'admin') return <AdminLayout authContext={authContextValue} appContext={appContextValue} />;
+        if (userData?.role === 'technician') return <TechnicianLayout authContext={authContextValue} appContext={appContextValue} />;
+        if (userData?.role === 'client') return <ClientLayout authContext={authContextValue} appContext={appContextValue} />;
 
-        // Tela de Boas-vindas / Login / Orçamento (Visitantes)
         const logoTransforms = appData.settings?.logoTransforms;
         const logoFilter = [
-            `brightness(${logoTransforms?.brightness || 1})`,
-            `contrast(${logoTransforms?.contrast || 1})`,
-            `grayscale(${logoTransforms?.grayscale || 0})`,
+            logoTransforms?.brightness !== undefined ? `brightness(${logoTransforms.brightness})` : '',
+            logoTransforms?.contrast !== undefined ? `contrast(${logoTransforms.contrast})` : '',
+            logoTransforms?.grayscale !== undefined ? `grayscale(${logoTransforms.grayscale})` : '',
         ].filter(Boolean).join(' ');
 
         return (
-            <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4">
+            <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4 relative">
                 <div className="absolute top-4 right-4"><ThemeToggle /></div>
-                <div className="w-full max-w-4xl mx-auto">
-                    <header className="text-center mb-8">
+                <div className="w-full max-w-lg mx-auto">
+                    <header className="text-center mb-10">
                         {appData.settings?.logoUrl ? (
-                            <div className="h-24 w-full mx-auto flex items-center justify-center overflow-hidden">
+                            <div className="h-24 w-full mx-auto flex items-center justify-center overflow-hidden mb-4">
                                 <img 
                                     src={appData.settings.logoUrl} 
                                     alt={appData.settings.companyName || 'Logo'} 
@@ -127,18 +115,13 @@ const App: React.FC = () => {
                                 />
                             </div>
                         ) : (
-                            <h1 className="text-4xl md:text-5xl font-bold text-primary-600 dark:text-primary-400">{appData.settings?.mainTitle || 'Piscina Limpa'}</h1>
+                            <h1 className="text-4xl font-black text-primary-600 dark:text-primary-400 mb-2 uppercase tracking-tighter">Painel do Robô</h1>
                         )}
-                        <p className="text-gray-600 dark:text-gray-300 mt-2">{appData.settings?.mainSubtitle || 'Compromisso e Qualidade'}</p>
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200">Monitor de Cobrança</h2>
+                        <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">Este painel monitora e configura o robô automático de lembretes de cobrança.</p>
                     </header>
-                    <div className="bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden">
-                        <div className="flex border-b border-gray-200 dark:border-gray-700">
-                            <button onClick={() => setIsLoginView(false)} className={`flex-1 p-4 text-center font-semibold transition-colors duration-300 ${!isLoginView ? 'bg-primary-500 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}>Calcular Orçamento</button>
-                            <button onClick={() => setIsLoginView(true)} className={`flex-1 p-4 text-center font-semibold transition-colors duration-300 ${isLoginView ? 'bg-primary-500 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}>Acessar Painel</button>
-                        </div>
-                        <div className="p-4 sm:p-8">
-                             {isLoginView ? <LoginView authContext={authContextValue} /> : <PreBudgetView appContext={appContextValue} />}
-                        </div>
+                    <div className="bg-white dark:bg-gray-800 shadow-2xl rounded-3xl overflow-hidden p-8 border dark:border-gray-700">
+                        <LoginView authContext={authContextValue} />
                     </div>
                 </div>
             </div>

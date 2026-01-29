@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
@@ -20,12 +19,10 @@ const LoginView: React.FC<LoginViewProps> = ({ authContext }) => {
         setIsLoading(true);
         try {
             await login(email, password);
-            // No success notification needed here, as the app will redirect automatically
         } catch (error: any) {
             console.error("Login Error:", error);
             let errorMessage = 'Falha ao fazer login. Verifique suas credenciais e tente novamente.';
             
-            // Firebase JS SDK v8 uses error.code
             if (error.code) {
                 switch (error.code) {
                     case 'auth/user-not-found':
@@ -39,7 +36,6 @@ const LoginView: React.FC<LoginViewProps> = ({ authContext }) => {
                         break;
                 }
             } else if (error.message && error.message.includes('INVALID_LOGIN_CREDENTIALS')) {
-                // Fallback for generic credential errors which can happen depending on environment
                 errorMessage = 'E-mail ou senha incorretos.';
             }
             
@@ -55,6 +51,7 @@ const LoginView: React.FC<LoginViewProps> = ({ authContext }) => {
             <form onSubmit={handleLogin}>
                 <Input
                     label="Email"
+                    name="email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -63,6 +60,7 @@ const LoginView: React.FC<LoginViewProps> = ({ authContext }) => {
                 />
                 <Input
                     label="Senha"
+                    name="password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}

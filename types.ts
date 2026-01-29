@@ -18,7 +18,7 @@ export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
 export type EmergencyStatus = 'pending' | 'resolved';
 
-export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot';
+export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
 
 export interface Address {
     street: string;
@@ -90,6 +90,24 @@ export interface EmergencyRequest {
     createdAt: any;
 }
 
+export interface ChatMessage {
+    id: string;
+    text: string;
+    sender: 'bot' | 'client' | 'admin';
+    timestamp: any;
+}
+
+export interface ChatSession {
+    id: string;
+    clientName: string;
+    clientPhone: string;
+    lastMessage: string;
+    lastMessageAt: any;
+    status: 'bot' | 'waiting' | 'human' | 'closed';
+    unreadCount: number;
+    messages?: ChatMessage[];
+}
+
 export interface ScheduledPlanChange {
     newPlan: PlanType;
     newPrice: number;
@@ -120,6 +138,9 @@ export interface Client {
     payment: {
         status: PaymentStatus;
         dueDate: string;
+        // Campos para o Robô Real (App B)
+        lastBillingNotificationRomantic?: any; 
+        lastBillingCycle?: string; // Ex: "2023-10"
     };
     stock: ClientProduct[];
     pixKey?: string;
@@ -326,10 +347,21 @@ export interface Settings {
     recessPeriods?: RecessPeriod[];
     aiBot?: {
         enabled: boolean;
-        name: string;
-        systemInstructions: string;
-        humanHandoffMessage: string;
-        autoSchedulingEnabled: boolean;
+        billingReminder: string;
+        overdueNotice: string;
+        lastCronRun?: any;
+        name?: string;
+        welcomeRegistered?: string;
+        menuRegistered?: string;
+        welcomeUnregistered?: string;
+        menuUnregistered?: string;
+        accessPanelMessage?: string;
+        schedulePartyMessage?: string;
+        planInfoMessage?: string;
+        quoteInstructionsMessage?: string;
+        plansOverviewMessage?: string;
+        humanHandoffMessage?: string;
+        invoiceMessage?: string;
     };
 }
 
@@ -348,6 +380,7 @@ export interface PendingPriceChange {
     status: 'pending' | 'applied';
     createdAt: any;
 }
+
 
 export type NotificationType = 'success' | 'error' | 'info';
 
@@ -379,6 +412,7 @@ export interface AppData {
     planChangeRequests: PlanChangeRequest[];
     poolEvents: PoolEvent[];
     emergencyRequests: EmergencyRequest[];
+    chatSessions: ChatSession[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
     loading: {
@@ -398,6 +432,7 @@ export interface AppData {
         poolEvents: boolean;
         planChangeRequests: boolean;
         emergencyRequests: boolean;
+        chatSessions: boolean;
     };
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;
@@ -449,4 +484,6 @@ export interface AppData {
     acknowledgeTerms: (clientId: string) => Promise<void>;
     createEmergencyRequest: (data: Omit<EmergencyRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>;
     resolveEmergencyRequest: (requestId: string) => Promise<void>;
+    sendAdminChatMessage: (sessionId: string, text: string) => Promise<void>;
+    closeChatSession: (sessionId: string) => Promise<void>;
 }

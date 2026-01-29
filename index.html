@@ -94,7 +94,7 @@
     
     <script>
         (function() {
-            const CURRENT_VERSION = '51'; // Bumped version
+            const CURRENT_VERSION = '52'; // Versão bump
             const storedVersion = localStorage.getItem('piscina_version');
             
             if (storedVersion !== CURRENT_VERSION) {
@@ -122,12 +122,11 @@
             async function registerSW() {
                 if (!("serviceWorker" in navigator)) return;
                 try {
-                    // FIX: Always using relative path for preview environments
-                    const registration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+                    // Usando caminho absoluto /sw.js para garantir carregamento em qualquer rota
+                    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
                     console.log('[PWA] Service Worker v' + CURRENT_VERSION + ' ativo.');
                 } catch (err) {
-                    // Squelch PWA register errors in restricted preview environments
-                    console.debug('[PWA] SW register skipped/failed in preview:', err.message);
+                    console.debug('[PWA] Erro ao registrar SW:', err.message);
                 }
             }
 

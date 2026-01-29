@@ -39,6 +39,15 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
 
+// Enable Firestore Offline Persistence for a more robust experience (especially for technicians)
+db.enablePersistence({ synchronizeTabs: true }).catch((err: any) => {
+    if (err.code === 'failed-precondition') {
+        console.warn("Firestore Persistence failed: Multiple tabs open.");
+    } else if (err.code === 'unimplemented') {
+        console.warn("Firestore Persistence failed: Browser not supported.");
+    }
+});
+
 const firebaseExport = firebase;
 
 // FIX: Export firebaseConfig to fix error "Module '../firebase' declares 'firebaseConfig' locally, but it is not exported"

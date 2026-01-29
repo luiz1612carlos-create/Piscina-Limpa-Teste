@@ -6,9 +6,7 @@ import { Spinner } from '../../components/Spinner';
 import { UsersIcon, CurrencyDollarIcon, CheckBadgeIcon, StoreIcon, TrashIcon, CalendarDaysIcon, ChartBarIcon } from '../../constants';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
-import { calculateClientMonthlyFee } from '../../utils/calculations';
 
-// This is a workaround for the no-build-tool environment
 declare const Chart: any;
 
 interface ReportsViewProps {
@@ -16,615 +14,154 @@ interface ReportsViewProps {
 }
 
 const toDate = (timestamp: any): Date | null => {
-    if (!timestamp) return new Date();
-    
-    if (typeof timestamp.toDate === 'function') {
-        return timestamp.toDate();
-    }
+    if (!timestamp) return null;
+    if (typeof timestamp.toDate === 'function') return timestamp.toDate();
     if (typeof timestamp === 'string') {
         const d = new Date(timestamp);
-        if (!isNaN(d.getTime())) {
-            return d;
-        }
+        return isNaN(d.getTime()) ? null : d;
     }
-    if (timestamp.seconds) {
-        return new Date(timestamp.seconds * 1000);
-    }
-    return new Date();
+    if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
+    return null;
 };
 
-
 const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
-    const { clients, orders, budgetQuotes, products, transactions, loading, resetReportsData, settings, banks } = appContext;
+    const { clients, orders, budgetQuotes, transactions, loading, resetReportsData } = appContext;
     
     const [isDuesModalOpen, setIsDuesModalOpen] = useState(false);
-    const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
-    const [selectedClientForWhatsApp, setSelectedClientForWhatsApp] = useState<Client | null>(null);
-    const [whatsAppMessage, setWhatsAppMessage] = useState('');
+
+    const isCriticalLoading = loading.clients || loading.transactions || loading.settings;
 
     const stats = useMemo(() => {
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        const activeClients = clients.filter(c => c.clientStatus === 'Ativo');
-        
         const monthlyRevenue = transactions.filter(t => {
             const d = toDate(t.date);
             return d && d >= startOfMonth;
         }).reduce((sum, t) => sum + Number(t.amount || 0), 0);
-
-        const newBudgetsThisMonth = budgetQuotes.filter(b => {
+        const newBudgets = budgetQuotes.filter(b => {
             const d = toDate(b.createdAt);
             return d && d >= startOfMonth;
         }).length;
-
-        const ordersThisMonth = orders.filter(o => {
-            const d = toDate(o.createdAt);
-            return d && d >= startOfMonth;
-        }).length;
-        
-        return {
-            activeClients: activeClients.length,
-            monthlyRevenue,
-            newBudgetsThisMonth,
-            ordersThisMonth
-        };
+        return { activeClients: clients.filter(c => c.clientStatus === 'Ativo').length, monthlyRevenue, newBudgets, ordersCount: orders.length };
     }, [clients, orders, budgetQuotes, transactions]);
-    
+
     const revenueByBank = useMemo(() => {
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        return transactions
-            .filter(t => {
+        return transactions.filter(t => {
                 const d = toDate(t.date);
                 return d && d >= startOfMonth;
-            })
-            .reduce((acc, t) => {
-                acc[t.bankName] = (acc[t.bankName] || 0) + Number(t.amount || 0);
+            }).reduce((acc, t) => {
+                const name = t.bankName || 'Não Identificado';
+                acc[name] = (acc[name] || 0) + Number(t.amount || 0);
                 return acc;
             }, {} as { [key: string]: number });
-
     }, [transactions]);
-
-    const recentTransactions = useMemo(() => {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        return [...transactions]
-            .filter(t => {
-                const d = toDate(t.date);
-                return d && d >= startOfMonth;
-            })
-            .sort((a, b) => {
-                const dateA = toDate(a.date)?.getTime() || 0;
-                const dateB = toDate(b.date)?.getTime() || 0;
-                return dateB - dateA;
-            });
-    }, [transactions]);
-
 
     const clientsWithPendingPayments = useMemo(() => {
         const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
+        today.setHours(0,0,0,0);
         const limitDate = new Date(today);
         limitDate.setDate(today.getDate() + 7);
-        limitDate.setHours(23, 59, 59, 999);
-
-        return clients.filter(client => {
-            if (!client.payment.dueDate || client.clientStatus !== 'Ativo' || client.payment.status === 'Pago') return false;
-            
-            const dueDate = new Date(client.payment.dueDate);
-            dueDate.setHours(0, 0, 0, 0);
-
-            // Regra corrigida: Deve estar vencido (dueDate <= today) 
-            // OU vencer nos próximos 7 dias (dueDate <= limitDate)
-            return dueDate <= limitDate;
-        }).sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
-    }, [clients]);
-
-    const handleOpenWhatsAppModal = (client: Client) => {
-        if (!settings) return;
-        
-        let pixKey = client.pixKey;
-        let pixRecipient = client.pixKeyRecipient;
-
-        if (!pixKey && client.bankId) {
-            const clientBank = banks.find(b => b.id === client.bankId);
-            if (clientBank && clientBank.pixKey) {
-                pixKey = clientBank.pixKey;
-                if (clientBank.pixKeyRecipient) {
-                    pixRecipient = clientBank.pixKeyRecipient;
-                }
-            }
-        }
-        if (!pixKey) {
-            pixKey = settings.pixKey;
-            if (!pixRecipient) {
-                pixRecipient = settings.pixKeyRecipient;
-            }
-        }
-        
-        if (!pixRecipient) {
-             pixRecipient = settings.pixKeyRecipient || settings.companyName;
-        }
-
-        const dueDate = new Date(client.payment.dueDate).toLocaleDateString('pt-BR');
-        const fee = calculateClientMonthlyFee(client, settings).toFixed(2).replace('.', ',');
-        
-        let template = settings.whatsappMessageTemplate;
-        
-        if (!template) {
-             template = "Olá {CLIENTE}, tudo bem? Passando para lembrar sobre o vencimento da sua mensalidade no valor de R$ {VALOR} no dia {VENCIMENTO}. \n\nChave PIX: {PIX} \nDestinatário: {DESTINATARIO}\n\nAgradecemos a parceria!";
-        } else if (!template.includes('{DESTINATARIO}')) {
-             if (template.includes('{PIX}')) {
-                 template = template.replace('{PIX}', '{PIX} \nDestinatário: {DESTINATARIO}');
-             } else {
-                 template += '\nDestinatário: {DESTINATARIO}';
-             }
-        }
-        
-        const message = template
-            .replace('{CLIENTE}', client.name)
-            .replace('{VALOR}', fee)
-            .replace('{VENCIMENTO}', dueDate)
-            .replace('{PIX}', pixKey || "Consulte-nos")
-            .replace('{DESTINATARIO}', pixRecipient || "Empresa");
-
-        setWhatsAppMessage(message);
-        setSelectedClientForWhatsApp(client);
-        setIsWhatsAppModalOpen(true);
-    };
-
-    const handleSendWhatsApp = () => {
-        if (!selectedClientForWhatsApp) return;
-        const phone = selectedClientForWhatsApp.phone.replace(/\D/g, '');
-        const encodedMessage = encodeURIComponent(whatsAppMessage);
-        window.open(`https://wa.me/55${phone}?text=${encodedMessage}`, '_blank');
-        setIsWhatsAppModalOpen(false);
-        setSelectedClientForWhatsApp(null);
-    };
-    
-    const visitTimeAnalysis = useMemo(() => {
-        const clientsWithVisits = clients.filter(c => c.lastVisitDuration && c.lastVisitDuration > 0);
-        if (clientsWithVisits.length === 0) {
-            return { average: 0, longest: [], shortest: [] };
-        }
-
-        const totalDuration = clientsWithVisits.reduce((sum, c) => sum + c.lastVisitDuration!, 0);
-        const average = totalDuration / clientsWithVisits.length;
-
-        const sortedByDuration = [...clientsWithVisits].sort((a, b) => b.lastVisitDuration! - a.lastVisitDuration!);
-        
-        const longest = sortedByDuration.slice(0, 5);
-        const shortest = sortedByDuration.slice(-5).reverse();
-
-        return { average, longest, shortest };
-    }, [clients]);
-
-    
-    const pendingPayments = useMemo(() => {
-        const now = new Date();
-        now.setHours(23, 59, 59, 999);
-
-        const nextMonth = new Date(now);
-        nextMonth.setDate(now.getDate() + 30);
-
         return clients.filter(c => {
             if (c.clientStatus !== 'Ativo' || c.payment.status === 'Pago') return false;
-            const dueDate = new Date(c.payment.dueDate);
-            
-            // Na tabela de pendentes, mostramos tudo que não está pago e vence em até 30 dias
-            // para evitar poluir com vencimentos muito distantes de contratos novos.
-            return dueDate <= nextMonth;
-        }).sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
+            const due = new Date(c.payment.dueDate);
+            return due <= limitDate;
+        }).sort((a,b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
     }, [clients]);
 
-    const isLoading = loading.clients || loading.orders || loading.budgetQuotes || loading.products || loading.settings || loading.transactions;
-    
-    if (isLoading) {
-        return <div className="flex justify-center items-center h-full"><Spinner size="lg" /></div>;
-    }
+    if (isCriticalLoading) return <div className="flex justify-center items-center h-full min-h-[400px]"><Spinner size="lg" /></div>;
 
     return (
-        <div className="space-y-8 pb-10">
+        <div className="space-y-8 pb-10 animate-fade-in">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <h2 className="text-3xl font-bold">Relatórios e Insights</h2>
-                <Button variant="danger" size="sm" onClick={resetReportsData}>
-                    <TrashIcon className="w-4 h-4 mr-2" />
-                    Resetar Dados
-                </Button>
+                <h2 className="text-3xl font-black text-gray-800 dark:text-white">Dashboard de Performance</h2>
+                <Button variant="danger" size="sm" onClick={resetReportsData}><TrashIcon className="w-4 h-4 mr-2" /> Limpar Dados de Teste</Button>
             </div>
-            
+
             {clientsWithPendingPayments.length > 0 && (
-                <div 
-                    className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded-md cursor-pointer hover:bg-yellow-200 transition-colors"
-                    role="alert"
-                    onClick={() => setIsDuesModalOpen(true)}
-                >
-                    <p className="font-bold">Alerta de Vencimentos</p>
-                    <p>Você tem {clientsWithPendingPayments.length} cliente(s) com mensalidades vencidas ou a vencer nos próximos 7 dias. Clique aqui para ver a lista.</p>
+                <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 text-amber-800 dark:text-amber-200 p-4 rounded-xl shadow-sm cursor-pointer hover:brightness-95 transition-all" onClick={() => setIsDuesModalOpen(true)}>
+                    <p className="font-black flex items-center gap-2"><CalendarDaysIcon className="w-5 h-5"/> Atenção Financeira</p>
+                    <p className="text-sm">Existem {clientsWithPendingPayments.length} mensalidades vencidas ou próximas do vencimento.</p>
                 </div>
             )}
 
-
-            {/* KPIs */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <KpiCard title="Clientes Ativos" value={stats.activeClients} icon={UsersIcon} />
-                <KpiCard title="Faturamento Real (Mês)" value={`R$ ${stats.monthlyRevenue.toFixed(2)}`} icon={CurrencyDollarIcon} />
-                <KpiCard title="Novos Orçamentos (Mês)" value={stats.newBudgetsThisMonth} icon={CheckBadgeIcon} />
-                <KpiCard title="Pedidos na Loja (Mês)" value={stats.ordersThisMonth} icon={StoreIcon} />
+                <KpiCard title="Ativos" value={stats.activeClients} icon={UsersIcon} color="blue" />
+                <KpiCard title="Receita (Mês)" value={`R$ ${stats.monthlyRevenue.toFixed(2)}`} icon={CurrencyDollarIcon} color="green" />
+                <KpiCard title="Novos Orçamentos" value={stats.newBudgets} icon={CheckBadgeIcon} color="purple" />
+                <KpiCard title="Pedidos" value={stats.ordersCount} icon={StoreIcon} color="orange" />
             </div>
 
-            {/* Main Content Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-                {/* Growth Chart */}
                 <Card className="lg:col-span-3">
-                    <CardHeader className="flex items-center gap-2">
-                        <ChartBarIcon className="w-5 h-5 text-primary-500" />
-                        <h3 className="font-semibold">Performance Financeira (Últimos 6 Meses)</h3>
-                    </CardHeader>
-                    <CardContent>
-                        <MonthlyGrowthChart clients={clients} transactions={transactions} settings={settings} />
-                    </CardContent>
+                    <CardHeader className="flex items-center gap-2 font-black"><ChartBarIcon className="w-5 h-5 text-primary-500" /> Crescimento Mensal</CardHeader>
+                    <CardContent><MonthlyGrowthChart transactions={transactions} /></CardContent>
                 </Card>
-
-                {/* Bank Distribution */}
                 <Card className="lg:col-span-2">
-                    <CardHeader className="flex items-center gap-2">
-                        <CurrencyDollarIcon className="w-5 h-5 text-green-500" />
-                        <h3 className="font-semibold">Recebido por Banco (Mês)</h3>
-                    </CardHeader>
-                    <CardContent>
-                         <DataTable 
-                            headers={['Banco/Conta', 'Valor']} 
-                            data={Object.entries(revenueByBank).map(([bankName, amount]) => [bankName, `R$ ${(amount as number).toFixed(2)}`])} 
-                        />
-                    </CardContent>
+                    <CardHeader className="flex items-center gap-2 font-black"><CurrencyDollarIcon className="w-5 h-5 text-green-500" /> Por Banco (Mês)</CardHeader>
+                    <CardContent><DataTable headers={['Banco', 'Valor']} data={Object.entries(revenueByBank).map(([k, v]) => [k, `R$ ${Number(v).toFixed(2)}`])} /></CardContent>
                 </Card>
             </div>
 
-            {/* Transactions History Table - IMPORTANT FOR VERIFICATION */}
             <Card>
-                <CardHeader className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <CalendarDaysIcon className="w-5 h-5 text-primary-500" />
-                        <h3 className="font-semibold">Fluxo de Caixa (Mês Atual)</h3>
-                    </div>
-                    <span className="text-xs bg-primary-100 text-primary-700 px-2 py-1 rounded-full font-bold">
-                        {recentTransactions.length} registros
-                    </span>
-                </CardHeader>
+                <CardHeader className="font-black">Últimas Transações Confirmadas</CardHeader>
                 <CardContent>
-                    <div className="max-h-80 overflow-y-auto">
-                        <DataTable 
-                            headers={['Data', 'Cliente', 'Banco', 'Valor']} 
-                            data={recentTransactions.map(t => [
-                                toDate(t.date)?.toLocaleDateString('pt-BR') || 'Pendente',
-                                t.clientName,
-                                t.bankName,
-                                <span className="font-bold text-green-600">R$ {t.amount.toFixed(2)}</span>
-                            ])} 
-                        />
+                    <div className="max-h-60 overflow-y-auto">
+                        <DataTable headers={['Data', 'Cliente', 'Valor']} data={transactions.slice(0, 10).map(t => [toDate(t.date)?.toLocaleDateString('pt-BR') || '---', t.clientName, <span className="font-bold text-green-600">R$ {(Number(t.amount) || 0).toFixed(2)}</span>])} />
                     </div>
                 </CardContent>
             </Card>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Plan Distribution */}
-                <Card>
-                    <CardHeader><h3 className="font-semibold">Distribuição de Planos</h3></CardHeader>
-                    <CardContent>
-                        <ClientPlanChart clients={clients} />
-                    </CardContent>
-                </Card>
-
-                {/* Pending Payments List */}
-                 <Card>
-                    <CardHeader><h3 className="font-semibold">Inadimplência / Pendentes (30 dias)</h3></CardHeader>
-                    <CardContent>
-                       <DataTable 
-                           headers={['Cliente', 'Vencimento', 'Valor']} 
-                           data={pendingPayments.map(c => {
-                               const dueDate = new Date(c.payment.dueDate);
-                               const now = new Date();
-                               now.setHours(0,0,0,0);
-                               const isAtrasado = dueDate < now;
-                               
-                               return [
-                                   c.name, 
-                                   <span className={isAtrasado ? "text-red-500 font-bold" : ""}>
-                                       {dueDate.toLocaleDateString('pt-BR')}
-                                   </span>, 
-                                   `R$ ${settings ? calculateClientMonthlyFee(c, settings).toFixed(2) : 'N/A'}`
-                               ];
-                           })} 
-                       />
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Visit Time Analysis */}
-             <Card>
-                <CardHeader><h3 className="font-semibold">Análise de Tempo de Visita</h3></CardHeader>
-                <CardContent>
-                    <p className="mb-4"><strong>Tempo Médio por Visita:</strong> {visitTimeAnalysis.average.toFixed(0)} minutos</p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <h4 className="font-semibold mb-2">Visitas Mais Longas</h4>
-                            <DataTable 
-                                headers={['Cliente', 'Duração (min)']} 
-                                data={visitTimeAnalysis.longest.map(c => [c.name, c.lastVisitDuration!])} 
-                            />
-                        </div>
-                        <div>
-                            <h4 className="font-semibold mb-2">Visitas Mais Rápidas</h4>
-                            <DataTable 
-                                headers={['Cliente', 'Duração (min)']} 
-                                data={visitTimeAnalysis.shortest.map(c => [c.name, c.lastVisitDuration!])} 
-                            />
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-
-
-            {/* Dues Modal */}
-            <Modal isOpen={isDuesModalOpen} onClose={() => setIsDuesModalOpen(false)} title="Alertas de Vencimento (Próximos 7 dias)">
+            <Modal isOpen={isDuesModalOpen} onClose={() => setIsDuesModalOpen(false)} title="Pendências Financeiras">
                 <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                    {clientsWithPendingPayments.map(client => {
-                        const dueDate = new Date(client.payment.dueDate);
-                        const today = new Date();
-                        today.setHours(0,0,0,0);
-                        const isVencido = dueDate < today;
-
-                        return (
-                            <div key={client.id} className="flex justify-between items-center p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
-                                <div>
-                                    <p className="font-semibold">{client.name}</p>
-                                    <p className={`text-sm ${isVencido ? 'text-red-500 font-bold' : 'text-gray-600 dark:text-gray-400'}`}>
-                                        Vencimento: {dueDate.toLocaleDateString('pt-BR')} {isVencido && '(VENCIDO)'}
-                                    </p>
-                                </div>
-                                <Button size="sm" onClick={() => handleOpenWhatsAppModal(client)}>
-                                    Cobrar
-                                </Button>
+                    {clientsWithPendingPayments.map(c => (
+                        <div key={c.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                            <div>
+                                <p className="font-black text-sm">{c.name}</p>
+                                <p className="text-xs text-red-500 font-bold">Vence em: {new Date(c.payment.dueDate).toLocaleDateString('pt-BR')}</p>
                             </div>
-                        );
-                    })}
+                            <p className="text-xs font-bold text-gray-400 uppercase">Aguardando Pagamento</p>
+                        </div>
+                    ))}
+                    {clientsWithPendingPayments.length === 0 && <p className="text-center py-4 text-gray-500">Nenhuma pendência para os próximos 7 dias.</p>}
                 </div>
-            </Modal>
-            
-            {/* WhatsApp Message Modal */}
-            <Modal 
-                isOpen={isWhatsAppModalOpen} 
-                onClose={() => setIsWhatsAppModalOpen(false)} 
-                title={`Mensagem para ${selectedClientForWhatsApp?.name}`}
-                footer={
-                    <>
-                        <Button variant="secondary" onClick={() => setIsWhatsAppModalOpen(false)}>Cancelar</Button>
-                        <Button onClick={handleSendWhatsApp}>Enviar via WhatsApp</Button>
-                    </>
-                }
-            >
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Edite a mensagem abaixo antes de enviar:</p>
-                <textarea
-                    value={whatsAppMessage}
-                    onChange={(e) => setWhatsAppMessage(e.target.value)}
-                    rows={8}
-                    className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
             </Modal>
         </div>
     );
 };
 
-const KpiCard = ({ title, value, icon: Icon }: { title: string, value: string | number, icon: React.FC<any> }) => (
-    <Card>
-        <CardContent className="flex items-center">
-            <div className="p-3 bg-primary-100 dark:bg-primary-900 rounded-full mr-4">
-                <Icon className="w-6 h-6 text-primary-600 dark:text-primary-300" />
-            </div>
-            <div>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
-                <p className="text-2xl font-bold">{value}</p>
-            </div>
-        </CardContent>
-    </Card>
+const KpiCard = ({ title, value, icon: Icon, color }: any) => (
+    <Card className="hover:shadow-lg transition-shadow"><CardContent className="flex items-center p-6"><div className={`p-4 rounded-2xl mr-4 bg-${color}-100 dark:bg-${color}-900/40 text-${color}-600 dark:text-${color}-300`}><Icon className="w-8 h-8" /></div><div><p className="text-xs font-black uppercase text-gray-400 tracking-widest">{title}</p><p className="text-2xl font-black text-gray-800 dark:text-white">{value}</p></div></CardContent></Card>
 );
 
-const DataTable = ({ headers, data }: { headers: string[], data: (any)[][] }) => (
-    <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-            <thead className="border-b dark:border-gray-700">
-                <tr>
-                    {headers.map(h => <th key={h} className="text-left p-2 font-semibold text-gray-500 dark:text-gray-400 uppercase text-[10px] tracking-wider">{h}</th>)}
-                </tr>
-            </thead>
-            <tbody className="divide-y dark:divide-gray-700">
-                {data.length > 0 ? data.map((row, i) => (
-                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                        {row.map((cell, j) => <td key={j} className="p-2 py-3">{cell}</td>)}
-                    </tr>
-                )) : <tr><td colSpan={headers.length} className="text-center p-8 text-gray-500">Nenhum dado relevante para este período.</td></tr>}
-            </tbody>
-        </table>
-    </div>
+const DataTable = ({ headers, data }: any) => (
+    <div className="overflow-x-auto w-full"><table className="min-w-full text-sm"><thead className="border-b dark:border-gray-700 text-gray-400 text-[10px] font-black uppercase tracking-tighter"><tr>{headers.map((h:any) => <th key={h} className="text-left p-2">{h}</th>)}</tr></thead><tbody className="divide-y dark:divide-gray-700">{data.length > 0 ? data.map((row:any, i:any) => (<tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/30">{row.map((cell:any, j:any) => <td key={j} className="p-2 py-3">{cell}</td>)}</tr>)) : <tr><td colSpan={headers.length} className="text-center p-10 text-gray-400 italic">Sem registros.</td></tr>}</tbody></table></div>
 );
 
-
-const ClientPlanChart = ({ clients }: { clients: Client[] }) => {
-    const chartRef = useRef<HTMLCanvasElement>(null);
-    const chartInstance = useRef<any>(null);
-
-    const data = useMemo(() => {
-        const counts = clients.reduce((acc, client) => {
-            if (client.clientStatus === 'Ativo') {
-                acc[client.plan] = (acc[client.plan] || 0) + 1;
-            }
-            return acc;
-        }, {} as { [key: string]: number });
-        return {
-            labels: Object.keys(counts),
-            values: Object.values(counts)
-        };
-    }, [clients]);
-
+const MonthlyGrowthChart = ({ transactions }: any) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const chartRef = useRef<any>(null);
     useEffect(() => {
-        if (!chartRef.current) return;
-        if (chartInstance.current) {
-            chartInstance.current.destroy();
-        }
-        const ctx = chartRef.current.getContext('2d');
-        chartInstance.current = new Chart(ctx, {
-            type: 'pie',
-            data: {
-                labels: data.labels,
-                datasets: [{
-                    data: data.values,
-                    backgroundColor: ['#3b82f6', '#f59e0b'],
-                    borderColor: '#fff',
-                    borderWidth: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                    },
-                }
-            }
-        });
-
-        return () => {
-            if (chartInstance.current) {
-                chartInstance.current.destroy();
-            }
-        };
-    }, [data]);
-
-    return <canvas ref={chartRef}></canvas>;
-};
-
-const MonthlyGrowthChart = ({ clients, transactions, settings }: { clients: Client[], transactions: Transaction[], settings: any }) => {
-    const chartRef = useRef<HTMLCanvasElement>(null);
-    const chartInstance = useRef<any>(null);
-
-    const data = useMemo(() => {
-        if (!settings) return { labels: [], realRevenue: [], potentialRevenue: [], clientCount: [] };
-
-        const labels: string[] = [];
-        const realRevenue: number[] = [];
-        const potentialRevenue: number[] = [];
-        const clientCount: number[] = [];
-        
+        if (!canvasRef.current) return;
+        if (chartRef.current) chartRef.current.destroy();
+        const labels = [];
+        const dataSet = [];
         for (let i = 5; i >= 0; i--) {
-            const d = new Date();
-            d.setMonth(d.getMonth() - i);
+            const d = new Date(); d.setMonth(d.getMonth() - i);
             labels.push(d.toLocaleString('pt-BR', { month: 'short' }));
-            
-            const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0);
-            const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59);
-
-            // Real Revenue: Sum of transactions in that month
-            const realSum = transactions
-                .filter(t => {
-                    const tDate = toDate(t.date);
-                    return tDate && tDate >= startOfMonth && tDate <= endOfMonth;
-                })
-                .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-            realRevenue.push(realSum);
-
-            // Potential Revenue & Client Count at that point in time
-            const clientsAtThatTime = clients.filter(c => {
-                const createdAtDate = toDate(c.createdAt);
-                return createdAtDate && createdAtDate <= endOfMonth && c.clientStatus === 'Ativo';
-            });
-            clientCount.push(clientsAtThatTime.length);
-
-            const potentialSum = clientsAtThatTime.reduce((sum, c) => sum + calculateClientMonthlyFee(c, settings), 0);
-            potentialRevenue.push(potentialSum);
+            const start = new Date(d.getFullYear(), d.getMonth(), 1);
+            const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            const sum = transactions.filter((t:any) => {
+                const dt = toDate(t.date);
+                return dt && dt >= start && dt <= end;
+            }).reduce((s:any, t:any) => s + Number(t.amount || 0), 0);
+            dataSet.push(sum);
         }
-        
-        return { labels, realRevenue, potentialRevenue, clientCount };
-    }, [clients, transactions, settings]);
-
-    useEffect(() => {
-        if (!chartRef.current) return;
-        if (chartInstance.current) {
-            chartInstance.current.destroy();
-        }
-        const ctx = chartRef.current.getContext('2d');
-        chartInstance.current = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: data.labels,
-                datasets: [
-                    {
-                        label: 'Faturamento Real (Pagos)',
-                        data: data.realRevenue,
-                        backgroundColor: '#10b981', // green-500
-                        yAxisID: 'y',
-                        order: 2
-                    },
-                    {
-                        label: 'Faturamento Potencial (Contratos)',
-                        data: data.potentialRevenue,
-                        backgroundColor: 'rgba(59, 130, 246, 0.4)', // blue-500 with alpha
-                        yAxisID: 'y',
-                        order: 3
-                    },
-                    {
-                        label: 'Total de Clientes',
-                        data: data.clientCount,
-                        borderColor: '#f59e0b', // amber-500
-                        backgroundColor: '#f59e0b',
-                        type: 'line',
-                        yAxisID: 'y1',
-                        order: 1,
-                        tension: 0.4
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
-                scales: {
-                    y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                         title: { display: true, text: 'Faturamento (R$)' }
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        title: { display: true, text: 'Clientes' },
-                        grid: {
-                            drawOnChartArea: false,
-                        },
-                    },
-                },
-            }
-        });
-        return () => {
-            if (chartInstance.current) {
-                chartInstance.current.destroy();
-            }
-        };
-    }, [data]);
-
-    return <canvas ref={chartRef} height="120"></canvas>;
+        const ctx = canvasRef.current.getContext('2d');
+        chartRef.current = new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: 'Faturamento Real', data: dataSet, backgroundColor: '#3b82f6', borderRadius: 8 }] }, options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } } } } });
+    }, [transactions]);
+    return <canvas ref={canvasRef} height="120"></canvas>;
 };
-
 
 export default ReportsView;
