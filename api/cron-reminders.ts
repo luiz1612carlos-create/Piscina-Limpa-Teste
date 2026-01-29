@@ -1,4 +1,10 @@
 // api/cron-reminders.ts
+
+// ⚠️ OBRIGATÓRIO NA VERCEL (Firebase Admin NÃO roda em Edge)
+export const config = {
+  runtime: 'nodejs',
+};
+
 import * as admin from 'firebase-admin';
 
 /**
@@ -7,9 +13,24 @@ import * as admin from 'firebase-admin';
  * Programação defensiva total
  */
 
-// 🔥 INIT FIREBASE ADMIN (SAFE PARA VERCEL)
-if (!admin.apps.length) {
-  admin.initializeApp();
+// 🔐 VALIDAÇÃO DE AMBIENTE (OBRIGATÓRIA)
+if (
+  !process.env.FIREBASE_PROJECT_ID ||
+  !process.env.FIREBASE_CLIENT_EMAIL ||
+  !process.env.FIREBASE_PRIVATE_KEY
+) {
+  throw new Error('Firebase Admin ENV vars missing');
+}
+
+// 🔥 INIT FIREBASE ADMIN (SAFE)
+if (admin.apps.length === 0) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    }),
+  });
 }
 
 const db = admin.firestore();
@@ -55,7 +76,7 @@ function parseMessage(
 }
 
 export default async function handler(req: any, res: any) {
-  // 🔐 TOKEN DO CRON (OBRIGATÓRIO)
+  // 🔐 TOKEN DO CRON
   if (req.headers?.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -75,9 +96,7 @@ export default async function handler(req: any, res: any) {
 
     const robotMode = bot.robotMode ?? 'dry-run';
     const MAX_CLIENTS =
-      robotMode === 'dry-run'
-        ? 1
-        : bot.maxClientsPerRun ?? 1;
+      robotMode === 'dry-run' ? 1 : bot.maxClientsPerRun ?? 1;
 
     const now = bot.robotTestDate
       ? new Date(bot.robotTestDate + 'T12:00:00')
@@ -108,18 +127,12 @@ export default async function handler(req: any, res: any) {
 
       if (!client?.payment) continue;
       if (client.payment.status === 'Pago') continue;
-
       if (
         robotMode === 'live' &&
         client.payment.lastBillingCycle === cycle
-      ) {
-        continue;
-      }
+      ) continue;
 
-      const dueDateStr = String(
-        client.payment.dueDate ?? ''
-      ).split('T')[0];
-
+      const dueDateStr = String(client.payment.dueDate ?? '').split('T')[0];
       if (dueDateStr !== targetDateStr) continue;
 
       const finalMessage = parseMessage(
@@ -174,7 +187,6 @@ export default async function handler(req: any, res: any) {
       simulatedDate: targetDateStr,
     });
   } catch (err: any) {
-    console.error('CRON ERROR:', err);
     return res.status(500).json({ error: err.message });
   }
 }
