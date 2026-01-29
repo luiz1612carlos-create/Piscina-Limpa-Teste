@@ -138,7 +138,7 @@ export interface Client {
     payment: {
         status: PaymentStatus;
         dueDate: string;
-        recipientName?: string;
+        // Campos para o Robô Real (App B)
         lastBillingNotificationRomantic?: any; 
         lastBillingCycle?: string; // Ex: "2023-10"
     };
@@ -288,7 +288,6 @@ export interface LogoTransforms {
 
 export interface Settings {
     companyName: string;
-    billingCompanyName?: string;
     mainTitle: string;
     mainSubtitle: string;
     logoUrl?: string;
@@ -296,6 +295,7 @@ export interface Settings {
     logoTransforms?: LogoTransforms;
     baseAddress: Address;
     pixKey: string;
+    pixKeyRecipient?: string;
     googleReviewUrl?: string;
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
@@ -347,9 +347,6 @@ export interface Settings {
     recessPeriods?: RecessPeriod[];
     aiBot?: {
         enabled: boolean;
-        robotMode: 'dry-run' | 'live';
-        robotTestDate?: string | null;
-        maxClientsPerRun?: number;
         billingReminder: string;
         overdueNotice: string;
         lastCronRun?: any;

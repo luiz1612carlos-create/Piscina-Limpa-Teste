@@ -6,7 +6,7 @@ import {
     OrderStatus, AppData, ReplenishmentQuote, ReplenishmentQuoteStatus, Bank, Transaction,
     AdvancePaymentRequest, AdvancePaymentRequestStatus, RouteDay, FidelityPlan, Visit, StockProduct,
     PendingPriceChange, PricingSettings, AffectedClientPreview, PoolEvent, RecessPeriod, PlanChangeRequest, PlanType,
-    EmergencyRequest, ChatSession, RobotPreview
+    EmergencyRequest, ChatSession
 } from '../types';
 import { compressImage } from '../utils/calculations';
 
@@ -45,14 +45,6 @@ const defaultSettings: Settings = {
     features: { vipPlanEnabled: true, planUpgradeEnabled: true, vipPlanDisabledMessage: "Em breve!", storeEnabled: true, advancePaymentPlanEnabled: false, advancePaymentTitle: "Economize!", advancePaymentSubtitleVIP: "", advancePaymentSubtitleSimple: "", maintenanceModeEnabled: false, maintenanceMessage: "" },
     automation: { replenishmentStockThreshold: 2 },
     advancePaymentOptions: [],
-    aiBot: {
-        enabled: false,
-        robotMode: 'dry-run',
-        robotTestDate: null,
-        maxClientsPerRun: 1,
-        billingReminder: '',
-        overdueNotice: ''
-    }
 };
 
 const toDate = (timestamp: any): Date | null => {
@@ -83,14 +75,13 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const [planChangeRequests, setPlanChangeRequests] = useState<PlanChangeRequest[]>([]);
     const [emergencyRequests, setEmergencyRequests] = useState<EmergencyRequest[]>([]);
     const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
-    const [robotPreviews, setRobotPreviews] = useState<RobotPreview[]>([]);
     const [setupCheck, setSetupCheck] = useState<'checking' | 'needed' | 'done'>('checking');
     
     const [loading, setLoading] = useState({
         clients: true, users: true, budgetQuotes: true, routes: true, products: true, stockProducts: true,
         orders: true, settings: true, replenishmentQuotes: true, banks: true, transactions: true,
         advancePaymentRequests: true, pendingPriceChanges: true, poolEvents: true, planChangeRequests: true,
-        emergencyRequests: true, chatSessions: true, robotPreviews: true
+        emergencyRequests: true, chatSessions: true
     });
 
     const isUserAdmin = userData?.role === 'admin';
@@ -112,10 +103,9 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         }, () => setLoadingState('settings', false)));
 
         if (isUserAdmin || isUserTechnician) {
-            const sync = (col: string, set: Function, load: keyof typeof loading, order?: string, limitCount?: number) => {
+            const sync = (col: string, set: Function, load: keyof typeof loading, order?: string) => {
                 let q: any = db.collection(col);
                 if (order) q = q.orderBy(order, 'desc');
-                if (limitCount) q = q.limit(limitCount);
                 unsubs.push(q.onSnapshot((s: any) => {
                     set(s.docs.map((d: any) => ({ id: d.id, ...d.data() })));
                     setLoadingState(load, false);
@@ -135,7 +125,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
             sync('planChangeRequests', setPlanChangeRequests, 'planChangeRequests', 'createdAt');
             sync('replenishmentQuotes', setReplenishmentQuotes, 'replenishmentQuotes', 'createdAt');
             sync('pendingPriceChanges', setPendingPriceChanges, 'pendingPriceChanges', 'createdAt');
-            sync('robotPreviews', setRobotPreviews, 'robotPreviews', 'generatedAt', 20);
 
             unsubs.push(db.collection('routes').doc('main').onSnapshot(doc => {
                 if (doc.exists) setRoutes(doc.data() as Routes);
@@ -366,7 +355,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const removeStockProductFromAllClients = useCallback(async (id: string) => 0, []);
 
     const appDataValue = useMemo(() => ({
-        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, robotPreviews, settings, pendingPriceChanges, loading,
+        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, settings, pendingPriceChanges, loading,
         setupCheck, isAdvancePlanGloballyAvailable, advancePlanUsage,
         approveBudgetQuote, rejectBudgetQuote, updateClient, deleteClient, markAsPaid, updateClientStock,
         scheduleClient, unscheduleClient, toggleRouteStatus, saveProduct, deleteProduct, saveStockProduct, deleteStockProduct, removeStockProductFromAllClients, saveBank, deleteBank,
@@ -376,7 +365,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         requestPlanChange, respondToPlanChangeRequest, acceptPlanChange, cancelPlanChangeRequest, cancelScheduledPlanChange, acknowledgeTerms,
         createEmergencyRequest, resolveEmergencyRequest, sendAdminChatMessage, closeChatSession
     }), [
-        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, robotPreviews, settings, pendingPriceChanges, loading,
+        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, settings, pendingPriceChanges, loading,
         setupCheck, isAdvancePlanGloballyAvailable, advancePlanUsage,
         approveBudgetQuote, rejectBudgetQuote, updateClient, deleteClient, markAsPaid, updateClientStock,
         scheduleClient, unscheduleClient, toggleRouteStatus, saveProduct, deleteProduct, saveStockProduct, deleteStockProduct, removeStockProductFromAllClients, saveBank, deleteBank,

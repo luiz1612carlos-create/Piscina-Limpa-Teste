@@ -16,7 +16,6 @@ export type ReplenishmentQuoteStatus = 'suggested' | 'sent' | 'approved' | 'reje
 export type AdvancePaymentRequestStatus = 'pending' | 'approved' | 'rejected';
 export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
-export type PlanType_Legacy = PlanType;
 export type EmergencyStatus = 'pending' | 'resolved';
 
 export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
@@ -139,9 +138,9 @@ export interface Client {
     payment: {
         status: PaymentStatus;
         dueDate: string;
-        recipientName?: string;
-        lastBillingCycle?: string;
+        // Campos para o Robô Real (App B)
         lastBillingNotificationRomantic?: any; 
+        lastBillingCycle?: string; // Ex: "2023-10"
     };
     stock: ClientProduct[];
     pixKey?: string;
@@ -287,20 +286,8 @@ export interface LogoTransforms {
     grayscale: number;
 }
 
-export interface RobotPreview {
-    id: string;
-    clientId: string;
-    clientName: string;
-    phone: string;
-    messageFinal: string;
-    dueDate: string;
-    generatedAt: any;
-    status: 'Simulation' | 'Sent' | 'Error';
-}
-
 export interface Settings {
     companyName: string;
-    billingCompanyName?: string;
     mainTitle: string;
     mainSubtitle: string;
     logoUrl?: string;
@@ -308,6 +295,7 @@ export interface Settings {
     logoTransforms?: LogoTransforms;
     baseAddress: Address;
     pixKey: string;
+    pixKeyRecipient?: string;
     googleReviewUrl?: string;
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
@@ -359,9 +347,6 @@ export interface Settings {
     recessPeriods?: RecessPeriod[];
     aiBot?: {
         enabled: boolean;
-        robotMode: 'dry-run' | 'live';
-        robotTestDate?: string | null;
-        maxClientsPerRun?: number;
         billingReminder: string;
         overdueNotice: string;
         lastCronRun?: any;
@@ -428,7 +413,6 @@ export interface AppData {
     poolEvents: PoolEvent[];
     emergencyRequests: EmergencyRequest[];
     chatSessions: ChatSession[];
-    robotPreviews: RobotPreview[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
     loading: {
@@ -449,7 +433,6 @@ export interface AppData {
         planChangeRequests: boolean;
         emergencyRequests: boolean;
         chatSessions: boolean;
-        robotPreviews: boolean;
     };
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;
