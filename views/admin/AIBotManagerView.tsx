@@ -25,7 +25,6 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
     const [isSaving, setIsSaving] = useState(false);
     const [activeTab, setActiveTab] = useState<'monitor' | 'config'>('monitor');
 
-    // FIX: Renamed billingReminderTemplate and overdueNoticeTemplate to match types.ts
     const [botConfig, setBotConfig] = useState({
         enabled: true,
         robotMode: 'dry-run' as 'dry-run' | 'live',
@@ -36,14 +35,12 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
     });
 
     const [billingInfo, setBillingInfo] = useState({
-        billingCompanyName: '',
-        billingRecipientName: ''
+        billingCompanyName: ''
     });
 
     useEffect(() => {
         if (settings) {
             if (settings.aiBot) {
-                // FIX: Spread will now correctly overwrite renamed properties because they match Settings['aiBot']
                 setBotConfig(prev => ({ 
                     ...prev, 
                     ...settings.aiBot,
@@ -52,8 +49,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                 }));
             }
             setBillingInfo({
-                billingCompanyName: settings.billingCompanyName || '',
-                billingRecipientName: settings.billingRecipientName || ''
+                billingCompanyName: settings.billingCompanyName || ''
             });
         }
     }, [settings]);
@@ -63,8 +59,7 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
         try {
             await updateSettings({ 
                 aiBot: botConfig,
-                billingCompanyName: billingInfo.billingCompanyName,
-                billingRecipientName: billingInfo.billingRecipientName
+                billingCompanyName: billingInfo.billingCompanyName
             });
             showNotification('Configuração do Robô salva com sucesso!', 'success');
         } catch (e) {
@@ -77,8 +72,10 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
         return `${d.getFullYear()}-${d.getMonth() + 1}`;
     }, [botConfig.robotTestDate]);
 
-    const VariableBadge = ({ name }: { name: string }) => (
-        <span className="text-[10px] bg-primary-100 text-primary-700 px-2 py-0.5 rounded font-mono font-bold">{`{${name}}`}</span>
+    const VariableBadge = ({ name, description }: { name: string, description?: string }) => (
+        <span className="group relative text-[10px] bg-primary-100 text-primary-700 px-2 py-0.5 rounded font-mono font-bold cursor-help" title={description}>
+            {`{${name}}`}
+        </span>
     );
 
     return (
@@ -177,19 +174,16 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                         {/* Seção de Identificação */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-8 border-b dark:border-gray-700">
                             <div className="space-y-4">
-                                <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Identidade de Cobrança</h4>
+                                <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Identidade Global</h4>
                                 <Input 
                                     label="Nome da Empresa (Variável {EMPRESA})"
                                     value={billingInfo.billingCompanyName}
                                     onChange={e => setBillingInfo(p => ({...p, billingCompanyName: e.target.value}))}
                                     placeholder={settings?.companyName || "Nome Padrão"}
                                 />
-                                <Input 
-                                    label="Nome do Destinatário (Variável {DESTINATARIO})"
-                                    value={billingInfo.billingRecipientName}
-                                    onChange={e => setBillingInfo(p => ({...p, billingRecipientName: e.target.value}))}
-                                    placeholder={settings?.pixKeyRecipient || "Nome PIX"}
-                                />
+                                <p className="text-[10px] text-gray-500 italic">
+                                    Nota: O campo de Destinatário agora é dinâmico e resolvido através dos dados de pagamento de cada cliente.
+                                </p>
                             </div>
                             <div className="space-y-4">
                                 <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Segurança de Envio</h4>
@@ -246,12 +240,16 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                 <label className="block text-xs font-bold text-gray-400 mb-2">Lembrete de Cobrança (Vencimento +2 dias)</label>
                                 <textarea 
                                     className="w-full p-4 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-2xl text-sm min-h-[120px] focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                                    // FIX: Updated value and onChange to use renamed properties
                                     value={botConfig.billingReminder}
                                     onChange={e => setBotConfig(p => ({...p, billingReminder: e.target.value}))}
                                 />
                                 <div className="flex flex-wrap gap-2 mt-2">
-                                    <VariableBadge name="CLIENTE" /> <VariableBadge name="VALOR" /> <VariableBadge name="VENCIMENTO" /> <VariableBadge name="PIX" /> <VariableBadge name="EMPRESA" /> <VariableBadge name="DESTINATARIO" />
+                                    <VariableBadge name="CLIENTE" description="Primeiro nome do cliente" /> 
+                                    <VariableBadge name="VALOR" description="Valor da manutenção (no painel)" /> 
+                                    <VariableBadge name="VENCIMENTO" description="Data de vencimento formatada" /> 
+                                    <VariableBadge name="PIX" description="Chave PIX (Cliente > Banco > Global)" /> 
+                                    <VariableBadge name="EMPRESA" description="Identidade de cobrança global" /> 
+                                    <VariableBadge name="DESTINATARIO" description="Nome do beneficiário (Dinâmico por cliente)" />
                                 </div>
                             </div>
 
@@ -259,7 +257,6 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                 <label className="block text-xs font-bold text-gray-400 mb-2">Mensagem de Atraso</label>
                                 <textarea 
                                     className="w-full p-4 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-2xl text-sm min-h-[120px] focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                                    // FIX: Updated value and onChange to use renamed properties
                                     value={botConfig.overdueNotice}
                                     onChange={e => setBotConfig(p => ({...p, overdueNotice: e.target.value}))}
                                 />

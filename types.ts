@@ -16,6 +16,7 @@ export type ReplenishmentQuoteStatus = 'suggested' | 'sent' | 'approved' | 'reje
 export type AdvancePaymentRequestStatus = 'pending' | 'approved' | 'rejected';
 export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
+export type PlanType_Legacy = PlanType;
 export type EmergencyStatus = 'pending' | 'resolved';
 
 export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
@@ -139,8 +140,8 @@ export interface Client {
         status: PaymentStatus;
         dueDate: string;
         // Campos para o Robô Real (App B)
-        lastBillingNotificationRomantic?: any; 
         lastBillingCycle?: string; // Ex: "2023-10"
+        lastBillingNotificationRomantic?: any; 
     };
     stock: ClientProduct[];
     pixKey?: string;
@@ -299,6 +300,7 @@ export interface RobotPreview {
 
 export interface Settings {
     companyName: string;
+    billingCompanyName?: string;
     mainTitle: string;
     mainSubtitle: string;
     logoUrl?: string;

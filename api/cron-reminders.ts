@@ -8,7 +8,7 @@ import * as admin from 'firebase-admin';
  * Ele gera as mensagens e marca o ciclo como processado.
  * 
  * ATUALIZAÇÃO: MODO DRY-RUN E TRAVAS DE SEGURANÇA.
- * ADIÇÃO: VARIÁVEIS {EMPRESA} E {DESTINATARIO}
+ * ADIÇÃO: SUPORTE DINÂMICO A {EMPRESA} E {DESTINATARIO}
  */
 
 if (!admin.apps.length) {
@@ -24,16 +24,18 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 // Utilitário de substituição de variáveis
-function parseMessage(template: string, data: Record<string, string>, settings: any) {
+function parseMessage(template: string, data: Record<string, string>, settings: any, client: any) {
     let msg = template || "";
     
-    // Resolução de {EMPRESA}
+    // Resolução de {EMPRESA} (quem cobra)
+    // 1. settings.billingCompanyName -> 2. settings.companyName -> Fallback
     const companyName = settings?.billingCompanyName || settings?.companyName || "Equipe Financeira";
     
-    // Resolução de {DESTINATARIO}
-    const recipientName = settings?.billingRecipientName || settings?.pixKeyRecipient || settings?.companyName || "Não informado";
+    // Resolução de {DESTINATARIO} (quem recebe) - DINÂMICO POR CLIENTE
+    // 1. client.pixKeyRecipient -> 2. settings.pixKeyRecipient -> 3. settings.companyName -> Fallback
+    const recipientName = client?.pixKeyRecipient || settings?.pixKeyRecipient || settings?.companyName || "Não informado";
 
-    // Substituições prioritárias solicitadas
+    // Substituições de variáveis dinâmicas do robô
     msg = msg.replace(/{EMPRESA}/g, companyName);
     msg = msg.replace(/{DESTINATARIO}/g, recipientName);
 
@@ -90,14 +92,13 @@ export default async function handler(req: any, res: any) {
             const dueDateStr = String(client.payment?.dueDate).split('T')[0];
 
             if (dueDateStr === targetDateStr) {
-                // GERA A MENSAGEM FINAL PASSANDO SETTINGS PARA RESOLVER NOVAS VARS
-                // FIX: Renamed property from billingReminderTemplate to billingReminder to match Settings type
+                // GERA A MENSAGEM FINAL PASSANDO SETTINGS E CLIENT PARA RESOLVER VARS
                 const finalMessage = parseMessage(bot.billingReminder, {
                     'CLIENTE': client.name.split(' ')[0],
                     'VALOR': "consulte seu painel", 
                     'VENCIMENTO': new Date(client.payment.dueDate).toLocaleDateString('pt-BR'),
-                    'PIX': settings?.pixKey || "Chave no painel"
-                }, settings);
+                    'PIX': client.pixKey || settings?.pixKey || "Chave no painel"
+                }, settings, client);
 
                 // 4️⃣ REGISTRO DE PREVIEW (OBRIGATÓRIO PARA AMBOS OS MODOS)
                 const previewData = {
