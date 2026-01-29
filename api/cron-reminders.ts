@@ -1,178 +1,97 @@
+
 // api/cron-reminders.ts
-import admin from 'firebase-admin';
+import * as admin from 'firebase-admin';
 
 /**
  * 🤖 MOTOR DO ROBÔ REAL (APP B)
- * Correção Crítica: Remoção TOTAL da variável {DESTINATARIO}.
- * O robô não referencia, não valida e não substitui essa variável.
+ * Este endpoint deve ser chamado via Cron Job.
+ * Ele gera as mensagens e marca o ciclo como processado.
  */
 
-try {
-  if (!admin.apps || admin.apps.length === 0) {
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-    if (privateKey) {
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: privateKey.replace(/\\n/g, '\n'),
-        }),
-      });
-    }
-  }
-} catch (initError) {
-  console.error("Erro na inicialização do Firebase Admin:", initError);
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
 }
 
 const db = admin.firestore();
 
-/**
- * Processa o template da mensagem substituindo APENAS variáveis existentes.
- * {DESTINATARIO} foi REMOVIDA completamente e não é mais reconhecida.
- */
-function parseMessage(
-  template: string,
-  data: Record<string, string>,
-  settings: any
-) {
-  let msg = template || "";
-  if (!msg || typeof msg !== 'string') return "";
-
-  // Variáveis institucionais válidas
-  const companyName =
-    settings?.billingCompanyName ||
-    settings?.companyName ||
-    "Equipe Financeira";
-
-  msg = msg.replace(/{EMPRESA}/g, String(companyName));
-
-  // Substituição das variáveis dinâmicas permitidas
-  const safeData = data || {};
-  Object.entries(safeData).forEach(([key, val]) => {
-    const regex = new RegExp(`{${key}}`, 'gi');
-    msg = msg.replace(regex, String(val || ""));
-  });
-
-  return msg;
+// Utilitário de substituição de variáveis
+function parseMessage(template: string, data: Record<string, string>) {
+    let msg = template || "";
+    Object.entries(data).forEach(([key, val]) => {
+        const regex = new RegExp(`{${key}}`, 'gi');
+        msg = msg.replace(regex, val);
+    });
+    return msg;
 }
 
 export default async function handler(req: any, res: any) {
-  try {
-    const authHeader = req.headers?.authorization;
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
-      return res.status(401).json({ error: "Unauthorized" });
+    // Segurança: Verificar token da Cron
+    if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+        return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const settingsSnap = await db.collection('settings').doc('main').get();
-    if (!settingsSnap.exists) {
-      return res.status(200).json({ status: "Settings not found" });
-    }
+    try {
+        const today = new Date();
+        const currentCycle = `${today.getFullYear()}-${today.getMonth() + 1}`;
+        
+        // Alvo: Vencimento em 2 dias
+        const targetDate = new Date();
+        targetDate.setDate(today.getDate() + 2);
+        const targetDateStr = targetDate.toISOString().split('T')[0];
 
-    const settings = settingsSnap.data();
-    const bot = settings?.aiBot;
+        const settingsSnap = await db.collection('settings').doc('main').get();
+        const settings = settingsSnap.data();
+        const bot = settings?.aiBot;
 
-    if (!bot || !bot.enabled) {
-      return res.status(200).json({ status: "Robot is off" });
-    }
+        if (!bot?.enabled) return res.status(200).json({ status: "Robot is off" });
 
-    const robotMode = bot.robotMode || 'dry-run';
-    const now = bot.robotTestDate
-      ? new Date(bot.robotTestDate + 'T12:00:00')
-      : new Date();
+        const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
+        let count = 0;
 
-    if (isNaN(now.getTime())) {
-      return res.status(400).json({ error: "Data de teste inválida." });
-    }
+        for (const doc of clientsSnap.docs) {
+            const client = doc.data();
+            const clientId = doc.id;
 
-    const currentCycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
-    const targetDate = new Date(now);
-    targetDate.setDate(now.getDate() + 2);
-    const targetDateStr = targetDate.toISOString().split('T')[0];
+            // Pula se já processou este mês
+            if (client.payment?.lastBillingCycle === currentCycle) continue;
+            // Pula se já pagou
+            if (client.payment?.status === 'Pago') continue;
 
-    const clientsSnap = await db
-      .collection('clients')
-      .where('clientStatus', '==', 'Ativo')
-      .get();
+            const dueDateStr = String(client.payment?.dueDate).split('T')[0];
 
-    if (!clientsSnap || clientsSnap.empty) {
-      return res.status(200).json({ status: "No active clients", processed: 0 });
-    }
+            if (dueDateStr === targetDateStr) {
+                // GERA A MENSAGEM FINAL
+                const finalMessage = parseMessage(bot.billingReminderTemplate, {
+                    'CLIENTE': client.name.split(' ')[0],
+                    'VALOR': "consulte seu painel", 
+                    'VENCIMENTO': new Date(client.payment.dueDate).toLocaleDateString('pt-BR'),
+                    'PIX': settings?.pixKey || "Chave no painel"
+                });
 
-    const MAX_CLIENTS =
-      robotMode === 'dry-run'
-        ? 1
-        : Number(bot.maxClientsPerRun) || 1;
+                // SALVA NO FIREBASE PARA O SOCKET EXTERNO CONSUMIR
+                await db.collection('clients').doc(clientId).update({
+                    'payment.lastBillingNotificationRomantic': finalMessage,
+                    'payment.lastBillingCycle': currentCycle,
+                    'payment.generatedAt': admin.firestore.FieldValue.serverTimestamp()
+                });
 
-    let count = 0;
-
-    for (const doc of clientsSnap.docs) {
-      if (count >= MAX_CLIENTS) break;
-
-      const client = doc.data();
-      const clientId = doc.id;
-
-      if (!client || !client.payment) continue;
-      if (client.payment.lastBillingCycle === currentCycle && robotMode === 'live') continue;
-      if (client.payment.status === 'Pago') continue;
-
-      const rawDueDate = client.payment.dueDate;
-      const dueDateStr =
-        rawDueDate && typeof rawDueDate === 'string'
-          ? rawDueDate.split('T')[0]
-          : "";
-
-      if (dueDateStr === targetDateStr) {
-        const clientName = client.name || "Cliente";
-
-        const finalMessage = parseMessage(
-          bot.billingReminder,
-          {
-            CLIENTE: clientName.split(' ')[0] || "Cliente",
-            VALOR: "consulte seu painel",
-            VENCIMENTO: rawDueDate
-              ? new Date(rawDueDate).toLocaleDateString('pt-BR')
-              : "---",
-            PIX: client.pixKey || settings?.pixKey || "Chave no painel"
-          },
-          settings
-        );
-
-        const previewData = {
-          clientId,
-          clientName,
-          phone: client.phone || 'N/A',
-          messageFinal: finalMessage,
-          dueDate: rawDueDate || "",
-          generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          status: robotMode === 'live' ? 'Sent' : 'Simulation'
-        };
-
-        await db.collection('robotPreviews').add(previewData);
-
-        if (robotMode === 'live') {
-          await db.collection('clients').doc(clientId).update({
-            'payment.lastBillingNotificationRomantic': finalMessage,
-            'payment.lastBillingCycle': currentCycle,
-            'payment.generatedAt': admin.firestore.FieldValue.serverTimestamp()
-          });
+                count++;
+            }
         }
 
-        count++;
-      }
+        return res.status(200).json({ 
+            success: true, 
+            cycle: currentCycle, 
+            messagesGenerated: count 
+        });
+
+    } catch (error: any) {
+        return res.status(500).json({ error: error.message });
     }
-
-    return res.status(200).json({
-      success: true,
-      mode: robotMode,
-      processed: count
-    });
-
-  } catch (error: any) {
-    return res.status(500).json({
-      error: "INTERNAL_SERVER_ERROR",
-      message: error.message
-    });
-  }
 }
