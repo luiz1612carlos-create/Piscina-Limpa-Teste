@@ -10,9 +10,10 @@ import admin from 'firebase-admin';
 if (
   !process.env.FIREBASE_PROJECT_ID ||
   !process.env.FIREBASE_CLIENT_EMAIL ||
-  !process.env.FIREBASE_PRIVATE_KEY
+  !process.env.FIREBASE_PRIVATE_KEY ||
+  !process.env.CRON_SECRET
 ) {
-  throw new Error('Firebase Admin ENV vars missing');
+  throw new Error('Required ENV vars missing (Firebase or CRON_SECRET)');
 }
 
 // 🔥 INIT FIREBASE ADMIN (SAFE + VERCEL)
