@@ -30,8 +30,8 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
         robotMode: 'dry-run' as 'dry-run' | 'live',
         robotTestDate: null as string | null,
         maxClientsPerRun: 1,
-        billingReminderTemplate: "Olá {CLIENTE}! 🏊‍♂️ Passando para lembrar do vencimento da sua manutenção no dia {VENCIMENTO}. Valor: R$ {VALOR}. Chave PIX: {PIX}",
-        overdueNoticeTemplate: "Olá {CLIENTE}! Identificamos um atraso no pagamento de {VENCIMENTO}. PIX: {PIX}",
+        billingReminder: "Olá {CLIENTE}! 🏊‍♂️ Passando para lembrar do vencimento da sua manutenção no dia {VENCIMENTO}. Valor: R$ {VALOR}. Chave PIX: {PIX}",
+        overdueNotice: "Olá {CLIENTE}! Identificamos um atraso no pagamento de {VENCIMENTO}. PIX: {PIX}",
     });
 
     useEffect(() => {
@@ -157,7 +157,6 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                 <Card>
                     <CardHeader className="font-bold">Inteligência e Travas do Robô</CardHeader>
                     <CardContent className="p-6 space-y-8">
-                        {/* Seção de Modo e Travas */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pb-8 border-b dark:border-gray-700">
                             <div className="space-y-4">
                                 <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Segurança de Envio</h4>
@@ -206,18 +205,17 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                             </div>
                         </div>
 
-                        {/* Templates */}
                         <div className="space-y-6">
                             <h4 className="text-xs font-black text-primary-500 uppercase tracking-widest">Modelos de Mensagem</h4>
                             <div>
                                 <label className="block text-xs font-bold text-gray-400 mb-2">Lembrete de Cobrança (Vencimento +2 dias)</label>
                                 <textarea 
                                     className="w-full p-4 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-2xl text-sm min-h-[120px] focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                                    value={botConfig.billingReminderTemplate}
-                                    onChange={e => setBotConfig(p => ({...p, billingReminderTemplate: e.target.value}))}
+                                    value={botConfig.billingReminder}
+                                    onChange={e => setBotConfig(p => ({...p, billingReminder: e.target.value}))}
                                 />
                                 <div className="flex flex-wrap gap-2 mt-2">
-                                    <VariableBadge name="CLIENTE" /> <VariableBadge name="VALOR" /> <VariableBadge name="VENCIMENTO" /> <VariableBadge name="PIX" />
+                                    <VariableBadge name="CLIENTE" /> <VariableBadge name="VALOR" /> <VariableBadge name="VENCIMENTO" /> <VariableBadge name="PIX" /> <VariableBadge name="EMPRESA" /> <VariableBadge name="DESTINATARIO" />
                                 </div>
                             </div>
 
@@ -225,8 +223,8 @@ const AIBotManagerView: React.FC<AIBotManagerViewProps> = ({ appContext }) => {
                                 <label className="block text-xs font-bold text-gray-400 mb-2">Mensagem de Atraso</label>
                                 <textarea 
                                     className="w-full p-4 bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-2xl text-sm min-h-[120px] focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                                    value={botConfig.overdueNoticeTemplate}
-                                    onChange={e => setBotConfig(p => ({...p, overdueNoticeTemplate: e.target.value}))}
+                                    value={botConfig.overdueNotice}
+                                    onChange={e => setBotConfig(p => ({...p, overdueNotice: e.target.value}))}
                                 />
                             </div>
                         </div>
