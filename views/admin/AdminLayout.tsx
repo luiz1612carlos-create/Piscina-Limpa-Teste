@@ -1,11 +1,11 @@
-
 import React, { useState } from 'react';
 import { AuthContextType, AppContextType, AdminView } from '../../types';
-import { MenuIcon, SunIcon, MoonIcon, LogoutIcon, UsersIcon, ChartBarIcon, SparklesIcon } from '../../constants';
+import { MenuIcon, SunIcon, MoonIcon, LogoutIcon, UsersIcon, ChartBarIcon, SparklesIcon, PlusIcon } from '../../constants';
 import { useTheme } from '../../hooks/useTheme';
 import ClientsView from './ClientsView';
 import ReportsView from './ReportsView';
 import AIBotManagerView from './AIBotManagerView';
+import RegisterClientsView from './RegisterClientsView';
 
 interface AdminLayoutProps {
     authContext: AuthContextType;
@@ -21,6 +21,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
     const menuItems = [
         { id: 'ai_bot', label: 'Monitor do Robô', icon: SparklesIcon },
         { id: 'reports', label: 'Logs de Execução', icon: ChartBarIcon },
+        { id: 'register_clients', label: 'Registrar Clientes', icon: PlusIcon },
         { id: 'clients', label: 'Lista de Clientes', icon: UsersIcon },
     ];
     
@@ -28,6 +29,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
         switch (currentView) {
             case 'reports': return <ReportsView appContext={appContext} />;
             case 'clients': return <ClientsView appContext={appContext} />;
+            case 'register_clients': return <RegisterClientsView appContext={appContext} />;
             case 'ai_bot': return <AIBotManagerView appContext={appContext} />;
             default: return <AIBotManagerView appContext={appContext} />;
         }

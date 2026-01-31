@@ -1,4 +1,3 @@
-
 export interface UserData {
     uid: string;
     email: string;
@@ -18,7 +17,7 @@ export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
 export type EmergencyStatus = 'pending' | 'resolved';
 
-export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
+export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'register_clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
 
 export interface Address {
     street: string;
@@ -113,6 +112,18 @@ export interface ScheduledPlanChange {
     newPrice: number;
     fidelityPlan?: FidelityPlan;
     effectiveDate?: any;
+}
+
+// FIX: Added RobotPreview interface to src/types.ts to resolve export error reported in AIBotManagerView.tsx
+export interface RobotPreview {
+    id: string;
+    clientId: string;
+    clientName: string;
+    phone: string;
+    messageFinal: string;
+    dueDate: string;
+    generatedAt: any;
+    status: 'Sent' | 'Simulation';
 }
 
 export interface Client {
@@ -413,6 +424,8 @@ export interface AppData {
     poolEvents: PoolEvent[];
     emergencyRequests: EmergencyRequest[];
     chatSessions: ChatSession[];
+    // FIX: Added robotPreviews to AppData interface in src/types.ts
+    robotPreviews: RobotPreview[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
     loading: {
@@ -433,6 +446,8 @@ export interface AppData {
         planChangeRequests: boolean;
         emergencyRequests: boolean;
         chatSessions: boolean;
+        // FIX: Added robotPreviews loading state
+        robotPreviews: boolean;
     };
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;

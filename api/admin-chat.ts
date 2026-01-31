@@ -1,4 +1,3 @@
-
 // api/admin-chat.ts
 import admin from "firebase-admin";
 
@@ -15,6 +14,11 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 function calculateFee(client: any, settings: any): string {
+  // PRIORIDADE: Valor manual
+  if (client.manualFee !== undefined && client.manualFee !== null) {
+      return Number(client.manualFee).toFixed(2).replace('.', ',');
+  }
+
   if (!client || !settings || !settings.pricing) return "0,00";
   const pricing = settings.pricing;
   const volume = Number(client.poolVolume || 0);

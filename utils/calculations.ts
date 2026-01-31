@@ -1,4 +1,3 @@
-
 import { Client, Settings, PricingSettings, Address } from '../types';
 
 /**
@@ -150,6 +149,11 @@ export const calculateDrivingDistance = async (origin: Address | string, dest: A
 };
 
 export const calculateClientMonthlyFee = (client: Partial<Client>, settings: Settings, overridePricing?: PricingSettings): number => {
+    // PRIORIDADE: Valor manual inserido no cadastro
+    if (client.manualFee !== undefined && client.manualFee !== null) {
+        return client.manualFee;
+    }
+
     if (!client.poolVolume || client.poolVolume <= 0) return 0;
 
     const pricing = overridePricing || client.customPricing || settings.pricing;

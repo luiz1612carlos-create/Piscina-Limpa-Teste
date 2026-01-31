@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { db, firebase, auth, storage, firebaseConfig } from '../firebase';
 import {
@@ -45,14 +44,6 @@ const defaultSettings: Settings = {
     features: { vipPlanEnabled: true, planUpgradeEnabled: true, vipPlanDisabledMessage: "Em breve!", storeEnabled: true, advancePaymentPlanEnabled: false, advancePaymentTitle: "Economize!", advancePaymentSubtitleVIP: "", advancePaymentSubtitleSimple: "", maintenanceModeEnabled: false, maintenanceMessage: "" },
     automation: { replenishmentStockThreshold: 2 },
     advancePaymentOptions: [],
-    aiBot: {
-        enabled: false,
-        robotMode: 'dry-run',
-        robotTestDate: null,
-        maxClientsPerRun: 1,
-        billingReminder: '',
-        overdueNotice: ''
-    }
 };
 
 const toDate = (timestamp: any): Date | null => {
@@ -83,6 +74,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const [planChangeRequests, setPlanChangeRequests] = useState<PlanChangeRequest[]>([]);
     const [emergencyRequests, setEmergencyRequests] = useState<EmergencyRequest[]>([]);
     const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+    // FIX: Added robotPreviews state in useAppData
     const [robotPreviews, setRobotPreviews] = useState<RobotPreview[]>([]);
     const [setupCheck, setSetupCheck] = useState<'checking' | 'needed' | 'done'>('checking');
     
@@ -90,7 +82,9 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         clients: true, users: true, budgetQuotes: true, routes: true, products: true, stockProducts: true,
         orders: true, settings: true, replenishmentQuotes: true, banks: true, transactions: true,
         advancePaymentRequests: true, pendingPriceChanges: true, poolEvents: true, planChangeRequests: true,
-        emergencyRequests: true, chatSessions: true, robotPreviews: true
+        emergencyRequests: true, chatSessions: true,
+        // FIX: Added robotPreviews loading state
+        robotPreviews: true
     });
 
     const isUserAdmin = userData?.role === 'admin';
@@ -112,10 +106,9 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         }, () => setLoadingState('settings', false)));
 
         if (isUserAdmin || isUserTechnician) {
-            const sync = (col: string, set: Function, load: keyof typeof loading, order?: string, limitCount?: number) => {
+            const sync = (col: string, set: Function, load: keyof typeof loading, order?: string) => {
                 let q: any = db.collection(col);
                 if (order) q = q.orderBy(order, 'desc');
-                if (limitCount) q = q.limit(limitCount);
                 unsubs.push(q.onSnapshot((s: any) => {
                     set(s.docs.map((d: any) => ({ id: d.id, ...d.data() })));
                     setLoadingState(load, false);
@@ -135,7 +128,8 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
             sync('planChangeRequests', setPlanChangeRequests, 'planChangeRequests', 'createdAt');
             sync('replenishmentQuotes', setReplenishmentQuotes, 'replenishmentQuotes', 'createdAt');
             sync('pendingPriceChanges', setPendingPriceChanges, 'pendingPriceChanges', 'createdAt');
-            sync('robotPreviews', setRobotPreviews, 'robotPreviews', 'generatedAt', 20);
+            // FIX: Added synchronization for robotPreviews collection
+            sync('robotPreviews', setRobotPreviews, 'robotPreviews', 'generatedAt');
 
             unsubs.push(db.collection('routes').doc('main').onSnapshot(doc => {
                 if (doc.exists) setRoutes(doc.data() as Routes);
@@ -233,6 +227,15 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     }, []);
 
     const closeChatSession = useCallback(async (sid: string) => { await db.collection('chatSessions').doc(sid).update({ status: 'closed' }); }, []);
+    
+    // NOVO: Função para adicionar cliente manualmente
+    const addClient = useCallback(async (data: Omit<Client, 'id' | 'createdAt'>) => {
+        await db.collection('clients').add({
+            ...data,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }, []);
+
     const updateClient = useCallback(async (id: string, data: Partial<Client>) => { await db.collection('clients').doc(id).update(data); }, []);
     const deleteClient = useCallback(async (id: string) => { await db.collection('clients').doc(id).delete(); }, []);
     
@@ -251,7 +254,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
                 poolDimensions: budget.poolDimensions, poolVolume: budget.poolVolume, hasWellWater: budget.hasWellWater,
                 includeProducts: false, isPartyPool: budget.isPartyPool, plan: budget.plan, clientStatus: 'Ativo',
                 poolStatus: { ph: 7.2, cloro: 1.5, alcalinidade: 100, uso: 'Livre para uso' },
-                payment: { status: 'Pendente', dueDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString() },
+                payment: { status: 'Pendente', dueDate: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString(), recipientName: budget.name },
                 stock: [], pixKey: '', createdAt: firebase.firestore.FieldValue.serverTimestamp(), lastVisitDuration: 0,
                 distanceFromHq: dist || budget.distanceFromHq || 0, fidelityPlan: budget.fidelityPlan || null
             });
@@ -357,7 +360,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const deleteRecessPeriod = useCallback(async (id: string) => { /* logic */ }, []);
     const requestPlanChange = useCallback(async (cid: string, n: string, cp: PlanType, rp: PlanType) => { await db.collection('planChangeRequests').add({ clientId: cid, clientName: n, currentPlan: cp, requestedPlan: rp, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
     const respondToPlanChangeRequest = useCallback(async (id: string, p: number, n: string) => { await db.collection('planChangeRequests').doc(id).update({ status: 'quoted', proposedPrice: p, adminNotes: n }); }, []);
-    const acceptPlanChange = useCallback(async (id: string, p: number) => { /* logic */ }, []);
+    const acceptPlanChange = useCallback(async (id: string, p: number, fidelityPlan?: FidelityPlan) => { /* logic */ }, []);
     const cancelPlanChangeRequest = useCallback(async (id: string) => { await db.collection('planChangeRequests').doc(id).update({ status: 'rejected' }); }, []);
     const cancelScheduledPlanChange = useCallback(async (id: string) => { await db.collection('clients').doc(id).update({ scheduledPlanChange: firebase.firestore.FieldValue.delete() }); }, []);
     const acknowledgeTerms = useCallback(async (id: string) => { await db.collection('clients').doc(id).update({ lastAcceptedTermsAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
@@ -368,7 +371,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const appDataValue = useMemo(() => ({
         clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, robotPreviews, settings, pendingPriceChanges, loading,
         setupCheck, isAdvancePlanGloballyAvailable, advancePlanUsage,
-        approveBudgetQuote, rejectBudgetQuote, updateClient, deleteClient, markAsPaid, updateClientStock,
+        approveBudgetQuote, rejectBudgetQuote, addClient, updateClient, deleteClient, markAsPaid, updateClientStock,
         scheduleClient, unscheduleClient, toggleRouteStatus, saveProduct, deleteProduct, saveStockProduct, deleteStockProduct, removeStockProductFromAllClients, saveBank, deleteBank,
         updateOrderStatus, updateSettings, schedulePriceChange, createBudgetQuote, createOrder, getClientData,
         createInitialAdmin, createTechnician, updateReplenishmentQuoteStatus, triggerReplenishmentAnalysis, createAdvancePaymentRequest, approveAdvancePaymentRequest, rejectAdvancePaymentRequest,
@@ -378,7 +381,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     }), [
         clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, robotPreviews, settings, pendingPriceChanges, loading,
         setupCheck, isAdvancePlanGloballyAvailable, advancePlanUsage,
-        approveBudgetQuote, rejectBudgetQuote, updateClient, deleteClient, markAsPaid, updateClientStock,
+        approveBudgetQuote, rejectBudgetQuote, addClient, updateClient, deleteClient, markAsPaid, updateClientStock,
         scheduleClient, unscheduleClient, toggleRouteStatus, saveProduct, deleteProduct, saveStockProduct, deleteStockProduct, removeStockProductFromAllClients, saveBank, deleteBank,
         updateOrderStatus, updateSettings, schedulePriceChange, createBudgetQuote, createOrder, getClientData,
         createInitialAdmin, createTechnician, updateReplenishmentQuoteStatus, triggerReplenishmentAnalysis, createAdvancePaymentRequest, approveAdvancePaymentRequest, rejectAdvancePaymentRequest,

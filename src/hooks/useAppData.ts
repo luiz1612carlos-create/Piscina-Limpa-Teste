@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { db, firebase, auth, storage, firebaseConfig } from '../firebase';
 import {
@@ -6,7 +5,7 @@ import {
     OrderStatus, AppData, ReplenishmentQuote, ReplenishmentQuoteStatus, Bank, Transaction,
     AdvancePaymentRequest, AdvancePaymentRequestStatus, RouteDay, FidelityPlan, Visit, StockProduct,
     PendingPriceChange, PricingSettings, AffectedClientPreview, PoolEvent, RecessPeriod, PlanChangeRequest, PlanType,
-    EmergencyRequest, ChatSession
+    EmergencyRequest, ChatSession, RobotPreview
 } from '../types';
 import { compressImage } from '../utils/calculations';
 
@@ -75,13 +74,17 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const [planChangeRequests, setPlanChangeRequests] = useState<PlanChangeRequest[]>([]);
     const [emergencyRequests, setEmergencyRequests] = useState<EmergencyRequest[]>([]);
     const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+    // FIX: Added robotPreviews state in src/hooks/useAppData.ts
+    const [robotPreviews, setRobotPreviews] = useState<RobotPreview[]>([]);
     const [setupCheck, setSetupCheck] = useState<'checking' | 'needed' | 'done'>('checking');
     
     const [loading, setLoading] = useState({
         clients: true, users: true, budgetQuotes: true, routes: true, products: true, stockProducts: true,
         orders: true, settings: true, replenishmentQuotes: true, banks: true, transactions: true,
         advancePaymentRequests: true, pendingPriceChanges: true, poolEvents: true, planChangeRequests: true,
-        emergencyRequests: true, chatSessions: true
+        emergencyRequests: true, chatSessions: true,
+        // FIX: Added robotPreviews loading state
+        robotPreviews: true
     });
 
     const isUserAdmin = userData?.role === 'admin';
@@ -125,6 +128,8 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
             sync('planChangeRequests', setPlanChangeRequests, 'planChangeRequests', 'createdAt');
             sync('replenishmentQuotes', setReplenishmentQuotes, 'replenishmentQuotes', 'createdAt');
             sync('pendingPriceChanges', setPendingPriceChanges, 'pendingPriceChanges', 'createdAt');
+            // FIX: Added collection synchronization for robotPreviews in src/hooks/useAppData.ts
+            sync('robotPreviews', setRobotPreviews, 'robotPreviews', 'generatedAt');
 
             unsubs.push(db.collection('routes').doc('main').onSnapshot(doc => {
                 if (doc.exists) setRoutes(doc.data() as Routes);
@@ -224,6 +229,15 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     }, []);
 
     const closeChatSession = useCallback(async (sid: string) => { await db.collection('chatSessions').doc(sid).update({ status: 'closed' }); }, []);
+    
+    // FIX: Added missing addClient function definition to src/hooks/useAppData.ts
+    const addClient = useCallback(async (data: Omit<Client, 'id' | 'createdAt'>) => {
+        await db.collection('clients').add({
+            ...data,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    }, []);
+
     const updateClient = useCallback(async (id: string, data: Partial<Client>) => { await db.collection('clients').doc(id).update(data); }, []);
     const deleteClient = useCallback(async (id: string) => { await db.collection('clients').doc(id).delete(); }, []);
     
@@ -348,7 +362,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const deleteRecessPeriod = useCallback(async (id: string) => { /* logic */ }, []);
     const requestPlanChange = useCallback(async (cid: string, n: string, cp: PlanType, rp: PlanType) => { await db.collection('planChangeRequests').add({ clientId: cid, clientName: n, currentPlan: cp, requestedPlan: rp, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
     const respondToPlanChangeRequest = useCallback(async (id: string, p: number, n: string) => { await db.collection('planChangeRequests').doc(id).update({ status: 'quoted', proposedPrice: p, adminNotes: n }); }, []);
-    const acceptPlanChange = useCallback(async (id: string, p: number) => { /* logic */ }, []);
+    const acceptPlanChange = useCallback(async (id: string, p: number, fidelityPlan?: FidelityPlan) => { /* logic */ }, []);
     const cancelPlanChangeRequest = useCallback(async (id: string) => { await db.collection('planChangeRequests').doc(id).update({ status: 'rejected' }); }, []);
     const cancelScheduledPlanChange = useCallback(async (id: string) => { await db.collection('clients').doc(id).update({ scheduledPlanChange: firebase.firestore.FieldValue.delete() }); }, []);
     const acknowledgeTerms = useCallback(async (id: string) => { await db.collection('clients').doc(id).update({ lastAcceptedTermsAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
@@ -357,9 +371,9 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const removeStockProductFromAllClients = useCallback(async (id: string) => 0, []);
 
     const appDataValue = useMemo(() => ({
-        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, settings, pendingPriceChanges, loading,
+        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, robotPreviews, settings, pendingPriceChanges, loading,
         setupCheck, isAdvancePlanGloballyAvailable, advancePlanUsage,
-        approveBudgetQuote, rejectBudgetQuote, updateClient, deleteClient, markAsPaid, updateClientStock,
+        approveBudgetQuote, rejectBudgetQuote, addClient, updateClient, deleteClient, markAsPaid, updateClientStock,
         scheduleClient, unscheduleClient, toggleRouteStatus, saveProduct, deleteProduct, saveStockProduct, deleteStockProduct, removeStockProductFromAllClients, saveBank, deleteBank,
         updateOrderStatus, updateSettings, schedulePriceChange, createBudgetQuote, createOrder, getClientData,
         createInitialAdmin, createTechnician, updateReplenishmentQuoteStatus, triggerReplenishmentAnalysis, createAdvancePaymentRequest, approveAdvancePaymentRequest, rejectAdvancePaymentRequest,
@@ -367,9 +381,9 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         requestPlanChange, respondToPlanChangeRequest, acceptPlanChange, cancelPlanChangeRequest, cancelScheduledPlanChange, acknowledgeTerms,
         createEmergencyRequest, resolveEmergencyRequest, sendAdminChatMessage, closeChatSession
     }), [
-        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, settings, pendingPriceChanges, loading,
+        clients, users, budgetQuotes, routes, products, stockProducts, orders, banks, transactions, replenishmentQuotes, advancePaymentRequests, planChangeRequests, poolEvents, emergencyRequests, chatSessions, robotPreviews, settings, pendingPriceChanges, loading,
         setupCheck, isAdvancePlanGloballyAvailable, advancePlanUsage,
-        approveBudgetQuote, rejectBudgetQuote, updateClient, deleteClient, markAsPaid, updateClientStock,
+        approveBudgetQuote, rejectBudgetQuote, addClient, updateClient, deleteClient, markAsPaid, updateClientStock,
         scheduleClient, unscheduleClient, toggleRouteStatus, saveProduct, deleteProduct, saveStockProduct, deleteStockProduct, removeStockProductFromAllClients, saveBank, deleteBank,
         updateOrderStatus, updateSettings, schedulePriceChange, createBudgetQuote, createOrder, getClientData,
         createInitialAdmin, createTechnician, updateReplenishmentQuoteStatus, triggerReplenishmentAnalysis, createAdvancePaymentRequest, approveAdvancePaymentRequest, rejectAdvancePaymentRequest,
