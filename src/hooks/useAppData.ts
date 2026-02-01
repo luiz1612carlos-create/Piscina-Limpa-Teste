@@ -268,15 +268,25 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     }, []);
 
     const rejectBudgetQuote = useCallback(async (id: string) => { await db.collection('pre-budgets').doc(id).delete(); }, []);
+    
+    // FIX: Added bankName lookup to markAsPaid to fix "Não Identificado" in reports, and added banks to deps array.
     const markAsPaid = useCallback(async (client: Client, months: number, total: number) => {
         if (!client.bankId) throw new Error("Associe um banco.");
+        const bank = banks.find(b => b.id === client.bankId);
         const batch = db.batch();
-        batch.set(db.collection('transactions').doc(), { clientId: client.id, clientName: client.name, bankId: client.bankId, amount: total, date: firebase.firestore.FieldValue.serverTimestamp() });
+        batch.set(db.collection('transactions').doc(), { 
+            clientId: client.id, 
+            clientName: client.name, 
+            bankId: client.bankId, 
+            bankName: bank?.name || 'Não Identificado',
+            amount: total, 
+            date: firebase.firestore.FieldValue.serverTimestamp() 
+        });
         const next = new Date(client.payment.dueDate);
         next.setMonth(next.getMonth() + months);
         batch.update(db.collection('clients').doc(client.id), { 'payment.dueDate': next.toISOString(), 'payment.status': 'Pago' });
         await batch.commit();
-    }, []);
+    }, [banks]);
 
     const updateClientStock = useCallback(async (id: string, s: ClientProduct[]) => { await db.collection('clients').doc(id).update({ stock: s }); }, []);
     const scheduleClient = useCallback(async (id: string, day: string) => {

@@ -50,7 +50,6 @@ export default async function handler(req: any, res: any) {
 
     if (useTemplate && settings.whatsappTemplateName) {
       // LOGICA DE TEMPLATE (PARA COBRANÇA FORA DA JANELA DE 24H)
-      // Buscamos os dados do cliente para preencher as variáveis do template Meta
       const from = sessionId.replace(/\D/g, "");
       const clientsSnap = await db.collection("clients").get();
       const clientDoc = clientsSnap.docs.find(d => {
@@ -60,10 +59,15 @@ export default async function handler(req: any, res: any) {
       const client = clientDoc?.data();
 
       let resolvedPix = settings.pixKey || "";
+      let bankName = "Não Identificado";
+      
       if (client?.pixKey) resolvedPix = client.pixKey;
       else if (client?.bankId) {
           const bank = await db.collection("banks").doc(client.bankId).get();
-          if (bank.exists) resolvedPix = bank.data()?.pixKey || resolvedPix;
+          if (bank.exists) {
+              resolvedPix = bank.data()?.pixKey || resolvedPix;
+              bankName = bank.data()?.name || bankName;
+          }
       }
 
       payload = {
@@ -80,14 +84,16 @@ export default async function handler(req: any, res: any) {
                 { type: "text", text: client?.name || "Cliente" },
                 { type: "text", text: client ? calculateFee(client, settings) : "0,00" },
                 { type: "text", text: client?.payment?.dueDate ? new Date(client.payment.dueDate).toLocaleDateString('pt-BR') : "A definir" },
-                { type: "text", text: resolvedPix }
+                { type: "text", text: resolvedPix },
+                { type: "text", text: bankName } // Suporte para {BANCO} no Template Oficial se configurado
               ]
             }
           ]
         }
       };
     } else {
-      // LOGICA DE TEXTO LIVRE (DENTRO DA JANELA DE 24H)
+      // LOGICA DE TEXTO LIVRE
+      // ... (sem alterações no corpo principal do envio de texto livre)
       const urlRegex = /(https?:\/\/[^\s]+)/g;
       const matches = text.match(urlRegex);
       const firstUrl = matches ? matches[0] : null;
@@ -126,7 +132,6 @@ export default async function handler(req: any, res: any) {
     const metaData = await metaResponse.json();
     if (!metaResponse.ok) {
         console.error("❌ Erro Meta API:", metaData);
-        // Se falhou por falta de template e tentamos texto livre, avisar
         if (metaData.error?.code === 131030) {
             return res.status(403).json({ error: "JANELA_FECHADA", message: "O cliente não responde há 24h. Use um Template Oficial." });
         }

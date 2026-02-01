@@ -3,15 +3,20 @@ import { AppContextType, Client } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Input } from '../../components/Input';
 import { Button } from '../../components/Button';
-import { PlusIcon } from '../../constants';
+import { Select } from '../../components/Select';
+import { Modal } from '../../components/Modal';
+import { PlusIcon, SparklesIcon } from '../../constants';
 
 interface RegisterClientsViewProps {
     appContext: AppContextType;
 }
 
 const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext }) => {
-    const { settings, addClient, showNotification } = appContext;
+    const { settings, banks, addClient, saveBank, showNotification } = appContext;
     const [isSaving, setIsSaving] = useState(false);
+    const [isBankModalOpen, setIsBankModalOpen] = useState(false);
+    const [newBankName, setNewBankName] = useState('');
+    const [isSavingBank, setIsSavingBank] = useState(false);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -19,6 +24,7 @@ const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext })
         email: '',
         pixKey: '',
         recipientName: '',
+        bankId: '',
         monthlyFee: 0,
         dueDate: new Date().toISOString().split('T')[0],
     });
@@ -44,6 +50,7 @@ const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext })
                 phone: formData.phone,
                 pixKey: formData.pixKey,
                 manualFee: formData.monthlyFee,
+                bankId: formData.bankId,
                 address: {
                     street: '',
                     number: '',
@@ -74,6 +81,7 @@ const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext })
             // Reset form
             setFormData({
                 name: '', phone: '', email: '', pixKey: '', recipientName: '',
+                bankId: '',
                 monthlyFee: 0,
                 dueDate: new Date().toISOString().split('T')[0],
             });
@@ -81,6 +89,24 @@ const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext })
             showNotification(error.message || 'Erro ao registrar cliente.', 'error');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleQuickCreateBank = async () => {
+        if (!newBankName.trim()) {
+            showNotification('Digite o nome do banco.', 'error');
+            return;
+        }
+        setIsSavingBank(true);
+        try {
+            await saveBank({ name: newBankName.trim() });
+            showNotification('Banco criado com sucesso!', 'success');
+            setNewBankName('');
+            setIsBankModalOpen(false);
+        } catch (error: any) {
+            showNotification('Erro ao criar banco.', 'error');
+        } finally {
+            setIsSavingBank(false);
         }
     };
 
@@ -102,6 +128,28 @@ const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext })
                             <Input label="Telefone (WhatsApp)" name="phone" value={formData.phone} onChange={handleInputChange} required placeholder="55..." />
                             <Input label="E-mail (opcional)" name="email" value={formData.email} onChange={handleInputChange} placeholder="joao@email.com" />
                             <Input label="Data do Próximo Vencimento {VENCIMENTO}" name="dueDate" type="date" value={formData.dueDate} onChange={handleInputChange} required />
+                            
+                            <div className="flex items-end gap-2">
+                                <Select 
+                                    label="Banco de Destino (Relatórios) {BANCO}" 
+                                    name="bankId" 
+                                    value={formData.bankId} 
+                                    onChange={handleInputChange} 
+                                    containerClassName="flex-grow mb-0"
+                                    options={[
+                                        { value: '', label: 'Selecione um banco...' },
+                                        ...banks.map(b => ({ value: b.id, label: b.name }))
+                                    ]}
+                                />
+                                <button 
+                                    type="button" 
+                                    onClick={() => setIsBankModalOpen(true)}
+                                    className="p-2.5 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 text-primary-600 transition-colors"
+                                    title="Criar novo banco"
+                                >
+                                    <PlusIcon className="w-6 h-6" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="pt-4 border-t dark:border-gray-700">
@@ -124,6 +172,7 @@ const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext })
                                 <VariableBadge name="CLIENTE" />
                                 <VariableBadge name="VALOR" />
                                 <VariableBadge name="VENCIMENTO" />
+                                <VariableBadge name="BANCO" />
                                 <VariableBadge name="DESTINATARIO" />
                                 <VariableBadge name="PIX" />
                                 <VariableBadge name="EMPRESA" />
@@ -139,6 +188,32 @@ const RegisterClientsView: React.FC<RegisterClientsViewProps> = ({ appContext })
                     </form>
                 </CardContent>
             </Card>
+
+            {/* Modal de Criação Rápida de Banco */}
+            <Modal 
+                isOpen={isBankModalOpen} 
+                onClose={() => setIsBankModalOpen(false)} 
+                title="Cadastrar Novo Banco"
+                footer={
+                    <>
+                        <Button variant="secondary" onClick={() => setIsBankModalOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleQuickCreateBank} isLoading={isSavingBank}>
+                            <SparklesIcon className="w-4 h-4 mr-2" /> Criar Banco
+                        </Button>
+                    </>
+                }
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-500">Crie um novo banco de destino para vincular a este e a futuros clientes.</p>
+                    <Input 
+                        label="Nome do Banco" 
+                        value={newBankName} 
+                        onChange={(e) => setNewBankName(e.target.value)} 
+                        placeholder="Ex: Banco do Brasil, Nubank..."
+                        autoFocus
+                    />
+                </div>
+            </Modal>
         </div>
     );
 };

@@ -9,6 +9,7 @@ import * as admin from 'firebase-admin';
  * ATUALIZAÇÃO CRÍTICA: Removida qualquer validação de obrigatoriedade para {DESTINATARIO}.
  * O sistema agora funciona normalmente mesmo se recipientName for nulo.
  * CORREÇÃO: Variável {VALOR} agora exibe o valor real (manual ou calculado).
+ * NOVO: Suporte à variável {BANCO}.
  */
 
 if (!admin.apps.length) {
@@ -57,9 +58,6 @@ function getClientFee(client: any, settings: any): string {
     if (client.hasWellWater) total += Number(pricing.wellWaterFee || 0);
     if (client.includeProducts) total += Number(pricing.productsFee || 0);
     if (client.isPartyPool) total += Number(pricing.partyPoolFee || 0);
-    
-    // Simplification for API: radius/km distance calculation skipped if not easily accessible, 
-    // but prioritized manualFee is the main request here.
     
     return total.toFixed(2).replace('.', ',');
 }
@@ -116,12 +114,20 @@ export default async function handler(req: any, res: any) {
                 
                 // CORREÇÃO: Obter o valor real para o template
                 const feeValue = getClientFee(client, settings);
+                
+                // BUSCAR NOME DO BANCO
+                let bankName = "Não Identificado";
+                if (client.bankId) {
+                    const bankSnap = await db.collection('banks').doc(client.bankId).get();
+                    if (bankSnap.exists) bankName = bankSnap.data()?.name || bankName;
+                }
 
                 const finalMessage = parseMessage(bot.billingReminder, {
                     'CLIENTE': clientFirstName,
                     'VALOR': `R$ ${feeValue}`, 
                     'VENCIMENTO': rawDueDate ? new Date(rawDueDate).toLocaleDateString('pt-BR') : "---",
                     'PIX': client.pixKey || settings?.pixKey || "Chave no painel",
+                    'BANCO': bankName,
                     'DESTINATARIO': resolvedRecipient,
                     'EMPRESA': companyName
                 });
