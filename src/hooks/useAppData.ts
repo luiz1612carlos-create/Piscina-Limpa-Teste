@@ -1,6 +1,6 @@
-
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { db, firebase, auth, storage, firebaseConfig } from '../firebase';
+// 🛑 REMOVIDO firebaseConfig DAQUI PARA EVITAR ERRO DE BUILD
+import { db, firebase, auth, storage } from '../firebase';
 import {
     Client, BudgetQuote, Routes, Product, Order, Settings, ClientProduct, UserData,
     OrderStatus, AppData, ReplenishmentQuote, ReplenishmentQuoteStatus, Bank, Transaction,
@@ -291,7 +291,11 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         const budgetDoc = await db.collection('pre-budgets').doc(id).get();
         if (!budgetDoc.exists) throw new Error("Orçamento não encontrado.");
         const budget = budgetDoc.data() as BudgetQuote;
-        const secondaryApp = firebase.initializeApp(firebaseConfig, `AppApproval_${Date.now()}`);
+        
+        // 🚀 CORREÇÃO: Usando o config do window diretamente aqui
+        const config = (window as any).firebaseConfig;
+        const secondaryApp = firebase.initializeApp(config, `AppApproval_${Date.now()}`);
+        
         try {
             const userCredential = await secondaryApp.auth().createUserWithEmailAndPassword(budget.email, pass);
             const newUid = userCredential.user.uid;
@@ -324,7 +328,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         batch.update(db.collection('clients').doc(client.id), { 'payment.dueDate': next.toISOString(), 'payment.status': 'Pago' });
         await batch.commit();
 
-        // NOVO: Disparo de Recibo Automático via WhatsApp Cloud API
+        // Recibo Automático
         try {
             const bank = banks.find(b => b.id === client.bankId);
             fetch('/api/send-receipt', {
