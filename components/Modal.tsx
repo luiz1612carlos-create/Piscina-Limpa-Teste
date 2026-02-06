@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface ModalProps {
@@ -23,7 +22,7 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center" onClick={onClose}>
             <div
-                className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl m-4 ${sizeClasses[size]} w-full flex flex-col max-h-[90vh]`}
+                className={`bg-white dark:bg-gray-800 rounded-lg shadow-xl m-4 ${sizeClasses[size]} w-full flex flex-col max-h-[90vh] text-gray-800 dark:text-gray-100`}
                 onClick={e => e.stopPropagation()}
             >
                 <div className="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">

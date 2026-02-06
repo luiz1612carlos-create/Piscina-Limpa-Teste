@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppContextType, Client, PoolUsageStatus, Visit, ClientProduct, StockProduct } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -8,7 +6,7 @@ import { Spinner } from '../../components/Spinner';
 import { Modal } from '../../components/Modal';
 import { Input } from '../../components/Input';
 import { Select } from '../../components/Select';
-import { PlusIcon, XMarkIcon } from '../../constants';
+import { PlusIcon } from '../../constants';
 import { ClientStockManager } from '../../components/ClientStockManager';
 
 interface TechnicianDashboardViewProps {
@@ -108,53 +106,25 @@ const ClientVisitModal: React.FC<ClientVisitModalProps> = ({ client, isOpen, onC
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSavingStock, setIsSavingStock] = useState(false);
     
-    // Form state initialized directly from props. This is safe because the component re-mounts on client change.
     const [ph, setPh] = useState(client.poolStatus.ph.toString());
     const [cloro, setCloro] = useState(client.poolStatus.cloro.toString());
     const [alcalinidade, setAlcalinidade] = useState(client.poolStatus.alcalinidade.toString());
     const [uso, setUso] = useState<PoolUsageStatus>(client.poolStatus.uso);
     const [notes, setNotes] = useState('');
-    const [photoFile, setPhotoFile] = useState<File | null>(null);
-    const [photoPreview, setPhotoPreview] = useState<string | null>(null);
     const [stockData, setStockData] = useState<ClientProduct[]>(client.stock || []);
-    const [fileInputKey, setFileInputKey] = useState(Date.now());
-    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-
-    const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            setPhotoFile(file);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setPhotoPreview(reader.result as string);
-            };
-            reader.readAsDataURL(file);
-        } else {
-            // Ensure state is cleared if user cancels file selection
-            setPhotoFile(null);
-            setPhotoPreview(null);
-        }
-    };
 
     const resetForm = () => {
         setIsAddingVisit(false);
-        // Reset to client's current status
         setPh(client.poolStatus.ph.toString());
         setCloro(client.poolStatus.cloro.toString());
         setAlcalinidade(client.poolStatus.alcalinidade.toString());
         setUso(client.poolStatus.uso);
         setNotes('');
-        setPhotoFile(null);
-        setPhotoPreview(null);
-        setFileInputKey(Date.now()); // Force file input to reset
     };
 
     const handleSubmitVisit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        if (photoFile) {
-            setUploadProgress(0);
-        }
         try {
             const visitData: Omit<Visit, 'id' | 'photoUrl' | 'timestamp' | 'technicianId' | 'technicianName'> = {
                 ph: parseFloat(ph) || 0,
@@ -163,16 +133,13 @@ const ClientVisitModal: React.FC<ClientVisitModalProps> = ({ client, isOpen, onC
                 uso,
                 notes,
             };
-            await addVisitRecord(client.id, visitData, photoFile || undefined, (progress) => {
-                setUploadProgress(progress);
-            });
+            await addVisitRecord(client.id, visitData);
             showNotification('Visita registrada com sucesso!', 'success');
-            onClose(); // Close modal on success
+            onClose();
         } catch (error: any) {
             showNotification(error.message || 'Erro ao registrar visita.', 'error');
         } finally {
             setIsSubmitting(false);
-            setUploadProgress(null);
         }
     };
 
@@ -214,32 +181,10 @@ const ClientVisitModal: React.FC<ClientVisitModalProps> = ({ client, isOpen, onC
                                 <Select label="Uso" value={uso} onChange={e => setUso(e.target.value as PoolUsageStatus)} options={[{ value: 'Livre para uso', label: 'Livre' }, { value: 'Em tratamento', label: 'Tratamento' }]} containerClassName="mb-0"/>
                             </div>
                             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Observações..." rows={3} className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500" />
-                            <Input key={fileInputKey} label="Foto da Piscina (Opcional)" type="file" accept="image/*" onChange={handlePhotoChange} />
-                            {photoPreview && (
-                                <div className="relative w-32 h-32">
-                                    <img src={photoPreview} alt="Preview" className="w-full h-full object-cover rounded-md" />
-                                    <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null); setFileInputKey(Date.now()); }} className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full shadow-md">
-                                        <XMarkIcon className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            )}
                         </fieldset>
-                         {uploadProgress !== null && (
-                            <div className="my-2">
-                                <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
-                                    <div 
-                                        className="bg-primary-600 h-2.5 rounded-full transition-all duration-300" 
-                                        style={{ width: `${uploadProgress}%` }}
-                                    ></div>
-                                </div>
-                                <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                    Enviando foto... {Math.round(uploadProgress)}%
-                                </p>
-                            </div>
-                        )}
                         <div className="flex justify-end gap-2 mt-4">
                             <Button type="button" variant="secondary" onClick={resetForm} disabled={isSubmitting}>Cancelar</Button>
-                            <Button type="submit" isLoading={isSubmitting && !photoFile} disabled={isSubmitting}>Salvar Visita</Button>
+                            <Button type="submit" isLoading={isSubmitting} disabled={isSubmitting}>Salvar Visita</Button>
                         </div>
                     </form>
                 ) : (

@@ -17,7 +17,7 @@ export type PoolEventStatus = 'notified' | 'acknowledged';
 export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
 export type EmergencyStatus = 'pending' | 'resolved';
 
-export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'register_clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
+export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
 
 export interface Address {
     street: string;
@@ -114,18 +114,6 @@ export interface ScheduledPlanChange {
     effectiveDate?: any;
 }
 
-// FIX: Added RobotPreview interface to resolve export error reported in AIBotManagerView.tsx
-export interface RobotPreview {
-    id: string;
-    clientId: string;
-    clientName: string;
-    phone: string;
-    messageFinal: string;
-    dueDate: string;
-    generatedAt: any;
-    status: 'Sent' | 'Simulation';
-}
-
 export interface Client {
     id: string;
     uid?: string;
@@ -149,13 +137,11 @@ export interface Client {
     payment: {
         status: PaymentStatus;
         dueDate: string;
-        recipientName?: string; // Variável {DESTINATARIO}
-        lastBillingCycle?: string; // Ex: "2023-10"
-        lastBillingNotificationRomantic?: any; 
     };
     stock: ClientProduct[];
-    pixKey?: string; // Variável {PIX}
+    pixKey?: string;
     pixKeyRecipient?: string;
+    recipientName?: string;
     bankId?: string;
     allowAccessInMaintenance?: boolean;
     createdAt: any;
@@ -166,7 +152,6 @@ export interface Client {
     distanceFromHq?: number;
     scheduledPlanChange?: ScheduledPlanChange;
     lastAcceptedTermsAt?: any;
-    manualFee?: number; // Valor manual para {VALOR}
 }
 
 export interface BudgetQuote {
@@ -184,6 +169,7 @@ export interface BudgetQuote {
     hasWellWater: boolean;
     isPartyPool: boolean;
     plan: PlanType;
+    // FIX: Added missing fidelityPlan property to BudgetQuote interface
     fidelityPlan?: FidelityPlan;
     monthlyFee: number;
     status: BudgetQuoteStatus;
@@ -312,6 +298,8 @@ export interface Settings {
     whatsappMessageTemplate?: string;
     announcementMessageTemplate?: string;
     priceReadjustmentMessageTemplate?: string;
+    whatsappTemplateName?: string;
+    whatsappTemplateLanguage?: string;
     termsUpdatedAt?: any;
     pricing: {
         perKm: number;
@@ -359,21 +347,30 @@ export interface Settings {
     recessPeriods?: RecessPeriod[];
     aiBot?: {
         enabled: boolean;
-        billingReminder: string;
-        overdueNotice: string;
-        lastCronRun?: any;
-        name?: string;
-        welcomeRegistered?: string;
-        menuRegistered?: string;
-        welcomeUnregistered?: string;
-        menuUnregistered?: string;
-        accessPanelMessage?: string;
-        schedulePartyMessage?: string;
-        planInfoMessage?: string;
-        quoteInstructionsMessage?: string;
-        plansOverviewMessage?: string;
-        humanHandoffMessage?: string;
-        invoiceMessage?: string;
+        name: string;
+        siteUrl?: string;
+        welcomeRegistered: string;
+        menuRegistered: string;
+        welcomeUnregistered: string;
+        menuUnregistered: string;
+        accessPanelMessage: string;
+        schedulePartyMessage: string;
+        planInfoMessage: string;
+        quoteInstructionsMessage: string;
+        plansOverviewMessage: string;
+        humanHandoffMessage: string;
+        invoiceMessage: string;
+    };
+    billingBot?: {
+        enabled: boolean;
+        dryRun: boolean;
+        daysBeforeDue: number;
+        messageTemplate: string;
+    };
+    receiptBot?: {
+        enabled: boolean;
+        templateName: string;
+        templateLanguage: string;
     };
 }
 
@@ -392,7 +389,6 @@ export interface PendingPriceChange {
     status: 'pending' | 'applied';
     createdAt: any;
 }
-
 
 export type NotificationType = 'success' | 'error' | 'info';
 
@@ -425,8 +421,6 @@ export interface AppData {
     poolEvents: PoolEvent[];
     emergencyRequests: EmergencyRequest[];
     chatSessions: ChatSession[];
-    // FIX: Added robotPreviews to AppData interface
-    robotPreviews: RobotPreview[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
     loading: {
@@ -447,8 +441,6 @@ export interface AppData {
         planChangeRequests: boolean;
         emergencyRequests: boolean;
         chatSessions: boolean;
-        // FIX: Added robotPreviews loading state
-        robotPreviews: boolean;
     };
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;
@@ -458,7 +450,6 @@ export interface AppData {
     };
     approveBudgetQuote: (budgetId: string, password: string, distanceFromHq?: number) => Promise<void>;
     rejectBudgetQuote: (budgetId: string) => Promise<void>;
-    addClient: (client: Omit<Client, 'id' | 'createdAt'>) => Promise<void>;
     updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
     deleteClient: (clientId: string) => Promise<void>;
     markAsPaid: (client: Client, months: number, totalAmount: number) => Promise<void>;

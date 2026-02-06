@@ -7,23 +7,11 @@
       "destination": "/api/$1"
     },
     {
-      "source": "/sw.js",
-      "destination": "/sw.js"
-    },
-    {
-      "source": "/manifest.json",
-      "destination": "/manifest.json"
-    },
-    {
       "source": "/icons/(.*)",
       "destination": "/icons/$1"
     },
     {
-      "source": "/favicon.ico",
-      "destination": "/favicon.ico"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/|icons/|index\\.css|index\\.tsx|favicon\\.ico|manifest\\.json|sw\\.js|.*\\.png|.*\\.jpg|.*\\.svg|.*\\.ico).*)",
       "destination": "/index.html"
     }
   ],
@@ -44,6 +32,21 @@
           "value": "no-cache, no-store, must-revalidate"
         }
       ]
+    },
+    {
+      "source": "/manifest.json",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron-reminders",
+      "schedule": "0 12 * * *"
     }
   ]
 }

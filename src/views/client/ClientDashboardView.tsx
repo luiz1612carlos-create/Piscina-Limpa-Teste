@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { AuthContextType, AppContextType, Client, ReplenishmentQuote, Order, Settings, CartItem, AdvancePaymentRequest, PoolEvent, RecessPeriod, PendingPriceChange, PlanChangeRequest, FidelityPlan } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -655,8 +656,8 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                     size="lg"
                     footer={<Button onClick={() => setIsTermsModalOpen(false)}>Fechar</Button>}
                 >
-                    <div className="prose dark:prose-invert max-h-96 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
-                        <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
+                    <div className="max-h-96 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border dark:border-gray-700">
+                        <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-200">
                             {currentPlanDetails.terms || "Termos não disponíveis no momento."}
                         </p>
                     </div>

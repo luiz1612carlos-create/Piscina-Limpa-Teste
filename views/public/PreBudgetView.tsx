@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
@@ -442,8 +441,8 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                     }
                 >
                     <div className="space-y-4">
-                        <div className="prose dark:prose-invert max-h-64 overflow-y-auto p-4 border rounded-md dark:border-gray-600 bg-gray-50 dark:bg-gray-900">
-                            <p className="whitespace-pre-wrap text-sm">{selectedPlanType === 'Simples' ? settings.plans.simple.terms : settings.plans.vip.terms}</p>
+                        <div className="max-h-64 overflow-y-auto p-4 border rounded-md dark:border-gray-600 bg-gray-50 dark:bg-gray-900/50">
+                            <p className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-100">{selectedPlanType === 'Simples' ? settings.plans.simple.terms : settings.plans.vip.terms}</p>
                         </div>
                         <p className="text-xs text-gray-500">Ao clicar em "Aceitar", você confirma que leu e concorda com as condições de serviço acima para o plano selecionado.</p>
                     </div>

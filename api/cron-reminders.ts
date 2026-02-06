@@ -1,170 +1,291 @@
-// api/cron-reminders.ts
-import * as admin from 'firebase-admin';
+import { getDb } from "./firebase/admin";
+import { FieldValue } from "firebase-admin/firestore";
 
-/**
- * 🤖 MOTOR DO ROBÔ REAL (APP B)
- * Este endpoint deve ser chamado via Cron Job.
- * Ele gera as mensagens e marca o ciclo como processado.
- * 
- * ATUALIZAÇÃO CRÍTICA: Removida qualquer validação de obrigatoriedade para {DESTINATARIO}.
- * O sistema agora funciona normalmente mesmo se recipientName for nulo.
- * CORREÇÃO: Variável {VALOR} agora exibe o valor real (manual ou calculado).
- * NOVO: Suporte à variável {BANCO}.
- */
+function calculateFee(client: any, pricing: any) {
+  if (!client.poolVolume || !pricing || !pricing.volumeTiers) return 0;
+  
+  let basePrice = 0;
+  const vol = Number(client.poolVolume);
+  const tiers = pricing.volumeTiers;
+  
+  const tier = tiers.find((t: any) => vol >= t.min && vol <= t.max);
+  if (tier) {
+    basePrice = Number(tier.price);
+  } else if (tiers.length > 0) {
+    const sorted = [...tiers].sort((a, b) => b.max - a.max);
+    if (vol > sorted[0].max) basePrice = Number(sorted[0].price);
+    else basePrice = Number(tiers[0].price);
+  }
 
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
+  let total = basePrice;
+  if (client.hasWellWater) total += Number(pricing.wellWaterFee || 0);
+  if (client.includeProducts) total += Number(pricing.productsFee || 0);
+  if (client.isPartyPool) total += Number(pricing.partyPoolFee || 0);
+
+  if (client.distanceFromHq && pricing.perKm) {
+    const radius = Number(pricing.serviceRadius || 0);
+    const distExtra = Math.max(0, Number(client.distanceFromHq) - radius);
+    total += (distExtra * Number(pricing.perKm));
+  }
+
+  if (client.plan === 'VIP' && client.fidelityPlan) {
+    const discount = total * (Number(client.fidelityPlan.discountPercent || 0) / 100);
+    total -= discount;
+  }
+
+  return total;
 }
 
-const db = admin.firestore();
+function toSafeDate(dateVal: any): Date | null {
+  if (!dateVal) return null;
+  if (typeof dateVal.toDate === 'function') return dateVal.toDate();
+  const d = new Date(dateVal);
+  return isNaN(d.getTime()) ? null : d;
+}
 
-// Utilitário de substituição de variáveis - Simples e sem validações impeditivas
-function parseMessage(template: string, data: Record<string, string>) {
-    let msg = template || "";
-    if (typeof msg !== 'string') return "";
-    
-    Object.entries(data).forEach(([key, val]) => {
-        const regex = new RegExp(`{${key}}`, 'gi');
-        msg = msg.replace(regex, String(val || ""));
+function getPureDateString(dateVal: any): string {
+  const date = toSafeDate(dateVal);
+  if (!date) return "";
+  try {
+    const formatter = new Intl.DateTimeFormat('fr-CA', { 
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
     });
-    return msg;
+    return formatter.format(date);
+  } catch (e) {
+    return "";
+  }
 }
 
-// Local helper to calculate or retrieve fee in the API environment
-function getClientFee(client: any, settings: any): string {
-    if (client.manualFee !== undefined && client.manualFee !== null) {
-        return Number(client.manualFee).toFixed(2).replace('.', ',');
+function replaceVars(text: string, vars: Record<string, string>) {
+  if (!text) return "";
+  let result = text;
+  for (const [key, value] of Object.entries(vars)) {
+    const regex = new RegExp(`(\\{\\{|\\{)\\s*${key}\\s*(\\}\\}|\\})`, "gi");
+    result = result.replace(regex, value ?? "");
+  }
+  return result;
+}
+
+async function sendWhatsAppMessage(to: string, text: string, templateConfig?: { name: string, language: string, parameters: any[] }) {
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const token = process.env.WHATSAPP_TOKEN;
+  if (!phoneId || !token) return { ok: false, error: "Credenciais de API ausentes" };
+
+  let formattedTo = to.replace(/\D/g, "");
+  if (formattedTo.length >= 10 && !formattedTo.startsWith("55")) {
+    formattedTo = "55" + formattedTo;
+  }
+
+  const payload: any = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: formattedTo,
+  };
+
+  if (templateConfig && templateConfig.name) {
+    payload.type = "template";
+    payload.template = {
+      name: templateConfig.name,
+      language: { code: templateConfig.language || "pt_BR" },
+      components: [
+        {
+          type: "body",
+          parameters: templateConfig.parameters.map(p => ({
+            type: "text",
+            text: String(p.text ?? "").slice(0, 1024)
+          }))
+        }
+      ]
+    };
+  } else {
+    payload.type = "text";
+    payload.text = { body: text };
+  }
+
+  try {
+    const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    
+    const resData = await response.json();
+    if (!response.ok) {
+        return { ok: false, error: JSON.stringify(resData) };
     }
-    
-    const pricing = settings?.pricing;
-    if (!pricing || !pricing.volumeTiers) return "0,00";
-    
-    const volume = Number(client.poolVolume || 0);
-    let basePrice = 0;
-    const tier = pricing.volumeTiers.find((t: any) => volume >= Number(t.min) && volume <= Number(t.max));
-    if (tier) basePrice = Number(tier.price);
-    else if (pricing.volumeTiers.length > 0) {
-        const sorted = [...pricing.volumeTiers].sort((a,b) => b.max - a.max);
-        if (volume > sorted[0].max) basePrice = sorted[0].price;
-    }
-    
-    let total = basePrice;
-    if (client.hasWellWater) total += Number(pricing.wellWaterFee || 0);
-    if (client.includeProducts) total += Number(pricing.productsFee || 0);
-    if (client.isPartyPool) total += Number(pricing.partyPoolFee || 0);
-    
-    return total.toFixed(2).replace('.', ',');
+    return { ok: true, data: resData };
+  } catch (err: any) {
+    return { ok: false, error: err.message };
+  }
 }
 
 export default async function handler(req: any, res: any) {
-    // Segurança: Verificar token da Cron
-    if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ error: "Unauthorized" });
+  try {
+    const db = getDb();
+    const settingsSnap = await db.collection('settings').doc('main').get();
+    const settings = settingsSnap.data() || {};
+    const billingBot = settings.billingBot || { enabled: false, dryRun: true, daysBeforeDue: 3 };
+
+    if (!billingBot.enabled && req.query.manual !== 'true') {
+      return res.status(200).json({ success: true, message: "Robô desativado nas configurações." });
     }
 
-    try {
-        const settingsSnap = await db.collection('settings').doc('main').get();
-        const settings = settingsSnap.data();
-        const bot = settings?.aiBot;
+    const brNowStr = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
+    const brDate = new Date(brNowStr);
+    const executionHour = brDate.toLocaleTimeString('pt-BR');
+    
+    const batchId = `batch_${Date.now()}`;
+    
+    const targetDate = new Date(brDate);
+    targetDate.setDate(targetDate.getDate() + (Number(billingBot.daysBeforeDue) || 0));
+    const targetDateStr = getPureDateString(targetDate);
 
-        if (!bot?.enabled) return res.status(200).json({ status: "Robot is off" });
+    const summaryRef = await db.collection('billing_execution_logs').add({
+      batchId,
+      timestamp: FieldValue.serverTimestamp(),
+      executionHourBR: executionHour,
+      mode: billingBot.dryRun ? 'dry-run' : 'live',
+      targetDate: targetDateStr,
+      status: 'running',
+      sent: 0, ignored: 0, failed: 0, processed: 0
+    });
 
-        // 1️⃣ MODO DO ROBÔ E DATA TESTE
-        const robotMode = bot.robotMode || 'dry-run';
-        const robotTestDateStr = bot.robotTestDate;
-        const now = robotTestDateStr ? new Date(robotTestDateStr + 'T12:00:00') : new Date();
-        const currentCycle = `${now.getFullYear()}-${now.getMonth() + 1}`;
-        
-        // Alvo: Vencimento em 2 dias com base na data do robô (real ou teste)
-        const targetDate = new Date(now);
-        targetDate.setDate(now.getDate() + 2);
-        const targetDateStr = targetDate.toISOString().split('T')[0];
+    const clientsSnap = await db.collection('clients')
+      .where('payment.status', 'in', ['Pendente', 'Atrasado'])
+      .get();
 
-        // 2️⃣ LIMITE DE SEGURANÇA
-        const MAX_CLIENTS = robotMode === 'dry-run' ? 1 : (bot.maxClientsPerRun || 1);
+    const summary = { sent: 0, ignored: 0, failed: 0, processed: 0 };
+    const mode = billingBot.dryRun ? 'dry-run' : 'live';
 
-        const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
-        let count = 0;
+    for (const doc of clientsSnap.docs) {
+      const client = doc.data();
+      const clientDueDate = toSafeDate(client.payment?.dueDate);
+      const clientDueDateStr = getPureDateString(clientDueDate);
+      summary.processed++;
+      
+      const valorCalculado = calculateFee(client, settings.pricing);
+      const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      
+      let vencimentoCurto = "---";
+      if (clientDueDate) {
+          const dia = String(clientDueDate.getUTCDate()).padStart(2, '0');
+          const mes = String(clientDueDate.getUTCMonth() + 1).padStart(2, '0');
+          vencimentoCurto = `${dia}/${mes}`;
+      }
 
-        for (const doc of clientsSnap.docs) {
-            if (count >= MAX_CLIENTS) break;
+      const logRef = await db.collection('billing_messages').add({
+        bot: "billingBot",
+        batchId: batchId,
+        customerId: doc.id,
+        customerName: client.name || "N/A",
+        phone: client.phone || "",
+        mode: mode,
+        status: "analyzing",
+        targetDate: targetDateStr,
+        clientDueDate: clientDueDateStr,
+        calculatedValue: valorCalculado,
+        createdAt: FieldValue.serverTimestamp()
+      });
 
-            const client = doc.data();
-            const clientId = doc.id;
+      if (clientDueDateStr !== targetDateStr) {
+        summary.ignored++;
+        await logRef.update({ 
+            status: "ignored_date", 
+            reason: `Data ${clientDueDateStr} não coincide com o alvo de cobrança ${targetDateStr}` 
+        });
+        continue;
+      }
 
-            if (!client || !client.payment) continue;
+      if (!client.phone) {
+        summary.failed++;
+        await logRef.update({ status: "failed", reason: "Telefone não cadastrado" });
+        continue;
+      }
 
-            // 3️⃣ TRAVA DE CICLO
-            if (client.payment.lastBillingCycle === currentCycle && robotMode === 'live') continue;
-            if (client.payment.status === 'Pago') continue;
+      if (valorCalculado <= 0) {
+        summary.failed++;
+        await logRef.update({ status: "failed", reason: "Mensalidade calculada como R$ 0,00" });
+        continue;
+      }
 
-            const rawDueDate = client.payment.dueDate;
-            const dueDateStr = rawDueDate && typeof rawDueDate === 'string' ? rawDueDate.split('T')[0] : "";
+      const textVars = {
+        nome: String(client.name || "Cliente"),
+        nome_cliente: String(client.name || "Cliente"),
+        valor: String(valorFormatado),
+        vencimento: vencimentoCurto,
+        data_vencimento: clientDueDate ? clientDueDate.toLocaleDateString('pt-BR') : vencimentoCurto,
+        status: client?.payment?.status || 'Pendente',
+        STATUS_PAGAMENTO: client?.payment?.status || 'Pendente',
+        pix: String(client.pixKey || settings.pixKey || "Não informada"),
+        destinatario: String(client.recipientName || settings.pixKeyRecipient || settings.companyName || "SOS Piscina"),
+        CLIENTE: String(client.name || "Cliente"),
+        VALOR: String(valorFormatado),
+        VENCIMENTO_CURTO: vencimentoCurto
+      };
 
-            if (dueDateStr === targetDateStr) {
-                const clientFirstName = (client.name || "Cliente").split(' ')[0];
-                const companyName = settings?.companyName || "Piscina Limpa";
-                const resolvedRecipient = client.payment.recipientName || client.name || companyName;
-                
-                // CORREÇÃO: Obter o valor real para o template
-                const feeValue = getClientFee(client, settings);
-                
-                // BUSCAR NOME DO BANCO
-                let bankName = "Não Identificado";
-                if (client.bankId) {
-                    const bankSnap = await db.collection('banks').doc(client.bankId).get();
-                    if (bankSnap.exists) bankName = bankSnap.data()?.name || bankName;
-                }
+      const message = replaceVars(billingBot.messageTemplate || "", textVars);
 
-                const finalMessage = parseMessage(bot.billingReminder, {
-                    'CLIENTE': clientFirstName,
-                    'VALOR': `R$ ${feeValue}`, 
-                    'VENCIMENTO': rawDueDate ? new Date(rawDueDate).toLocaleDateString('pt-BR') : "---",
-                    'PIX': client.pixKey || settings?.pixKey || "Chave no painel",
-                    'BANCO': bankName,
-                    'DESTINATARIO': resolvedRecipient,
-                    'EMPRESA': companyName
-                });
-
-                // 4️⃣ REGISTRO DE PREVIEW
-                const previewData = {
-                    clientId: clientId,
-                    clientName: client.name || "N/A",
-                    phone: client.phone || 'N/A',
-                    messageFinal: finalMessage,
-                    dueDate: rawDueDate || "",
-                    generatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                    status: robotMode === 'live' ? 'Sent' : 'Simulation'
-                };
-
-                await db.collection('robotPreviews').add(previewData);
-
-                // 5️⃣ ENVIO REAL
-                if (robotMode === 'live') {
-                    await db.collection('clients').doc(clientId).update({
-                        'payment.lastBillingNotificationRomantic': finalMessage,
-                        'payment.lastBillingCycle': currentCycle,
-                        'payment.generatedAt': admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-
-                count++;
-            }
+      if (billingBot.dryRun) {
+        summary.sent++;
+        await logRef.update({ 
+            status: "skipped_simulation", 
+            messagePreview: message,
+            variables: textVars,
+            hasTemplate: !!settings.whatsappTemplateName
+        });
+      } else {
+        let templateConfig = undefined;
+        if (settings.whatsappTemplateName) {
+           templateConfig = {
+             name: settings.whatsappTemplateName,
+             language: settings.whatsappTemplateLanguage || "pt_BR",
+             parameters: [
+                { type: "text", text: textVars.nome },
+                { type: "text", text: textVars.valor },
+                { type: "text", text: textVars.vencimento },
+                { type: "text", text: textVars.pix },
+                { type: "text", text: textVars.destinatario }
+             ]
+           };
         }
 
-        return res.status(200).json({ 
-            success: true, 
-            mode: robotMode,
-            processed: count
-        });
-
-    } catch (error: any) {
-        return res.status(500).json({ error: "INTERNAL_ERROR", message: error.message });
+        const result = await sendWhatsAppMessage(client.phone, message, templateConfig);
+        
+        if (result.ok) {
+          summary.sent++;
+          await logRef.update({ 
+            status: "sent", 
+            sentAt: FieldValue.serverTimestamp(), 
+            messageSent: message,
+            usedTemplate: !!templateConfig,
+            parametersSent: templateConfig?.parameters.map(p => p.text)
+          });
+        } else {
+          summary.failed++;
+          await logRef.update({ status: "failed", error: result.error, usedTemplate: !!templateConfig });
+        }
+      }
     }
+
+    await summaryRef.update({
+      ...summary,
+      status: 'completed',
+      finishedAt: FieldValue.serverTimestamp()
+    });
+
+    return res.status(200).json({ success: true, batchId, summary, executionTime: executionHour });
+
+  } catch (error: any) {
+    console.error("🔥 Erro fatal no billing bot:", error);
+    const db = getDb();
+    await db.collection('billing_execution_logs').add({
+        timestamp: FieldValue.serverTimestamp(),
+        status: 'error',
+        error: error.message
+    });
+    return res.status(500).json({ success: false, error: error.message });
+  }
 }

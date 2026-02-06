@@ -1,20 +1,19 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR" class="h-full dark">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Piscina Limpa | Sistema de Gestão</title>
-    
-    <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#1f2937">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Piscina Limpa">
-    <link rel="apple-touch-icon" href="/icons/icon-192.png">
-    <link rel="manifest" href="/manifest.json">
 
-    <!-- Tailwind CSS -->
+    <meta name="theme-color" content="#1f2937" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Piscina Limpa" />
+
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="manifest" href="/manifest.json" />
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -26,11 +25,6 @@
                             50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd',
                             400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8',
                             800: '#1e40af', 900: '#1e3a8a'
-                        },
-                        secondary: {
-                            50: '#fdf2f8', 100: '#fce7f3', 200: '#fbcfe8', 300: '#f9a8d4',
-                            400: '#f472b6', 500: '#ec4899', 600: '#db2777', 700: '#be185d',
-                            800: '#9d174d', 900: '#831843'
                         }
                     }
                 }
@@ -38,99 +32,82 @@
         }
     </script>
 
-    <!-- Chart.js for Reports -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- Html2Canvas for Logo Builder -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    
-    <!-- Environment & AI SDK Setup -->
-    <script>
-      window.process = window.process || {};
-      window.process.env = window.process.env || {};
+
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@^19.2.1",
+        "react-dom": "https://esm.sh/react-dom@^19.2.1",
+        "react-dom/client": "https://esm.sh/react-dom@^19.2.1/client",
+        "react/jsx-runtime": "https://esm.sh/react@^19.2.1/jsx-runtime",
+        "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+        "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+        "react/": "https://esm.sh/react@^19.2.4/",
+        "firebase-admin/": "https://esm.sh/firebase-admin@^13.6.1/",
+        "path": "https://esm.sh/path@^0.12.7",
+        "url": "https://esm.sh/url@^0.11.4",
+        "vite": "https://esm.sh/vite@^7.3.1",
+        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.3"
+      }
+    }
     </script>
 
-    <link rel="stylesheet" href="index.css">
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.1",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.1",
-    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client",
-    "react/jsx-runtime": "https://aistudiocdn.com/react@^19.2.1/jsx-runtime",
-    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "path": "https://esm.sh/path@^0.12.7",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "url": "https://esm.sh/url@^0.11.4",
-    "firebase-admin": "https://esm.sh/firebase-admin@^13.6.0"
-  }
-}
-</script>
+    <script>
+        window.process = { env: {} };
+        
+        window.firebaseConfig = {
+  apiKey: "AIzaSyAGcNaVkzxTdzsR10RSsgHH56M6yGcVH0Y",
+  authDomain: "sos-piscinalimpa-56349.firebaseapp.com",
+  projectId: "sos-piscinalimpa-56349",
+  storageBucket: "sos-piscinalimpa-56349.firebasestorage.app",
+  messagingSenderId: "381700700922",
+  appId: "1:381700700922:web:bf89b0e0ffbb7a1b576743"
+};
+
+
+        (function() {
+            try {
+                if (typeof firebase !== 'undefined') {
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(window.firebaseConfig);
+                        console.log("🚀 Firebase ativo.");
+                    }
+                }
+            } catch (e) {
+                console.error("Falha ao carregar Firebase:", e);
+            }
+        })();
+    </script>
+    
+    <link rel="stylesheet" href="/src/index.css">
 <link rel="stylesheet" href="/index.css">
 </head>
-<body class="h-full bg-gray-100 dark:bg-gray-900">
+
+<body class="h-full bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
     <div id="root" class="h-full"></div>
 
-    <script>
-      window.firebaseConfig = {
-        apiKey: "AIzaSyAGcNaVkzxTdzsR10RSsgHH56M6yGcVH0Y",
-        authDomain: "sos-piscinalimpa-56349.firebaseapp.com",
-        projectId: "sos-piscinalimpa-56349",
-        storageBucket: "sos-piscinalimpa-56349.firebasestorage.app",
-        messagingSenderId: "381700700922",
-        appId: "1:381700700922:web:bf89b0e0ffbb7a1b576743"
-      };
-    </script>
+    <script type="module" src="/src/index.tsx"></script>
 
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
-
-    <script type="module" src="./index.tsx"></script>
-    
     <script>
-        (function() {
-            const CURRENT_VERSION = '52'; // Versão bump
-            const storedVersion = localStorage.getItem('piscina_version');
-            
-            if (storedVersion !== CURRENT_VERSION) {
-                console.warn('[App] Atualizando para v' + CURRENT_VERSION);
-                const clearData = async () => {
-                    if ('caches' in window) {
-                        try {
-                            const keys = await caches.keys();
-                            await Promise.all(keys.map(key => caches.delete(key)));
-                        } catch (e) {}
-                    }
-                    if ('serviceWorker' in navigator) {
-                        try {
-                            const registrations = await navigator.serviceWorker.getRegistrations();
-                            await Promise.all(registrations.map(r => r.unregister()));
-                        } catch (e) {}
-                    }
-                    localStorage.setItem('piscina_version', CURRENT_VERSION);
-                    window.location.reload();
-                };
-                clearData();
-                return;
+        (function () {
+            const VERSION = 'test-clean-100';
+            if (localStorage.getItem('app_version') !== VERSION) {
+                localStorage.clear();
+                localStorage.setItem('app_version', VERSION);
             }
 
-            async function registerSW() {
-                if (!("serviceWorker" in navigator)) return;
-                try {
-                    // Usando caminho absoluto /sw.js para garantir carregamento em qualquer rota
-                    const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-                    console.log('[PWA] Service Worker v' + CURRENT_VERSION + ' ativo.');
-                } catch (err) {
-                    console.debug('[PWA] Erro ao registrar SW:', err.message);
-                }
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('/sw.js').catch(() => {});
+                });
             }
-
-            window.addEventListener('load', registerSW);
         })();
     </script>
 <script type="module" src="/index.tsx"></script>

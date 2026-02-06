@@ -1,11 +1,11 @@
-
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { AppContextType, Client, Transaction } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
-import { UsersIcon, CurrencyDollarIcon, CheckBadgeIcon, StoreIcon, TrashIcon, CalendarDaysIcon, ChartBarIcon } from '../../constants';
+import { UsersIcon, CurrencyDollarIcon, CheckBadgeIcon, StoreIcon, TrashIcon, CalendarDaysIcon, ChartBarIcon, SparklesIcon } from '../../constants';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
+import { calculateClientMonthlyFee } from '../../utils/calculations';
 
 declare const Chart: any;
 
@@ -25,10 +25,8 @@ const toDate = (timestamp: any): Date | null => {
 };
 
 const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
-    const { clients, orders, budgetQuotes, transactions, loading, resetReportsData } = appContext;
+    const { clients, orders, budgetQuotes, transactions, loading, resetReportsData, settings, banks, showNotification, sendAdminChatMessage } = appContext;
     
-    const [isDuesModalOpen, setIsDuesModalOpen] = useState(false);
-
     const isCriticalLoading = loading.clients || loading.transactions || loading.settings;
 
     const stats = useMemo(() => {
@@ -52,23 +50,14 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
                 const d = toDate(t.date);
                 return d && d >= startOfMonth;
             }).reduce((acc, t) => {
-                const name = t.bankName || 'Não Identificado';
+                // CORREÇÃO: Tenta bankName salvo, se não houver, cruza bankId com lista de banks, se não houver, vira "Outros"
+                const activeBank = banks.find(b => b.id === t.bankId);
+                const name = t.bankName || activeBank?.name || 'Não Identificado';
+                
                 acc[name] = (acc[name] || 0) + Number(t.amount || 0);
                 return acc;
             }, {} as { [key: string]: number });
-    }, [transactions]);
-
-    const clientsWithPendingPayments = useMemo(() => {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const limitDate = new Date(today);
-        limitDate.setDate(today.getDate() + 7);
-        return clients.filter(c => {
-            if (c.clientStatus !== 'Ativo' || c.payment.status === 'Pago') return false;
-            const due = new Date(c.payment.dueDate);
-            return due <= limitDate;
-        }).sort((a,b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
-    }, [clients]);
+    }, [transactions, banks]); // DEPENDÊNCIA DE BANKS ADICIONADA
 
     if (isCriticalLoading) return <div className="flex justify-center items-center h-full min-h-[400px]"><Spinner size="lg" /></div>;
 
@@ -78,13 +67,6 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
                 <h2 className="text-3xl font-black text-gray-800 dark:text-white">Dashboard de Performance</h2>
                 <Button variant="danger" size="sm" onClick={resetReportsData}><TrashIcon className="w-4 h-4 mr-2" /> Limpar Dados de Teste</Button>
             </div>
-
-            {clientsWithPendingPayments.length > 0 && (
-                <div className="bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 text-amber-800 dark:text-amber-200 p-4 rounded-xl shadow-sm cursor-pointer hover:brightness-95 transition-all" onClick={() => setIsDuesModalOpen(true)}>
-                    <p className="font-black flex items-center gap-2"><CalendarDaysIcon className="w-5 h-5"/> Atenção Financeira</p>
-                    <p className="text-sm">Existem {clientsWithPendingPayments.length} mensalidades vencidas ou próximas do vencimento.</p>
-                </div>
-            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <KpiCard title="Ativos" value={stats.activeClients} icon={UsersIcon} color="blue" />
@@ -96,7 +78,7 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 <Card className="lg:col-span-3">
                     <CardHeader className="flex items-center gap-2 font-black"><ChartBarIcon className="w-5 h-5 text-primary-500" /> Crescimento Mensal</CardHeader>
-                    <CardContent><MonthlyGrowthChart transactions={transactions} /></CardContent>
+                    <CardContent><MonthlyGrowthChart clients={clients} transactions={transactions} settings={settings} /></CardContent>
                 </Card>
                 <Card className="lg:col-span-2">
                     <CardHeader className="flex items-center gap-2 font-black"><CurrencyDollarIcon className="w-5 h-5 text-green-500" /> Por Banco (Mês)</CardHeader>
@@ -112,21 +94,6 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
                     </div>
                 </CardContent>
             </Card>
-
-            <Modal isOpen={isDuesModalOpen} onClose={() => setIsDuesModalOpen(false)} title="Pendências Financeiras">
-                <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                    {clientsWithPendingPayments.map(c => (
-                        <div key={c.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
-                            <div>
-                                <p className="font-black text-sm">{c.name}</p>
-                                <p className="text-xs text-red-500 font-bold">Vence em: {new Date(c.payment.dueDate).toLocaleDateString('pt-BR')}</p>
-                            </div>
-                            <p className="text-xs font-bold text-gray-400 uppercase">Aguardando Pagamento</p>
-                        </div>
-                    ))}
-                    {clientsWithPendingPayments.length === 0 && <p className="text-center py-4 text-gray-500">Nenhuma pendência para os próximos 7 dias.</p>}
-                </div>
-            </Modal>
         </div>
     );
 };
@@ -139,11 +106,11 @@ const DataTable = ({ headers, data }: any) => (
     <div className="overflow-x-auto w-full"><table className="min-w-full text-sm"><thead className="border-b dark:border-gray-700 text-gray-400 text-[10px] font-black uppercase tracking-tighter"><tr>{headers.map((h:any) => <th key={h} className="text-left p-2">{h}</th>)}</tr></thead><tbody className="divide-y dark:divide-gray-700">{data.length > 0 ? data.map((row:any, i:any) => (<tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/30">{row.map((cell:any, j:any) => <td key={j} className="p-2 py-3">{cell}</td>)}</tr>)) : <tr><td colSpan={headers.length} className="text-center p-10 text-gray-400 italic">Sem registros.</td></tr>}</tbody></table></div>
 );
 
-const MonthlyGrowthChart = ({ transactions }: any) => {
+const MonthlyGrowthChart = ({ clients, transactions, settings }: any) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const chartRef = useRef<any>(null);
     useEffect(() => {
-        if (!canvasRef.current) return;
+        if (!canvasRef.current || !settings) return;
         if (chartRef.current) chartRef.current.destroy();
         const labels = [];
         const dataSet = [];
@@ -160,7 +127,7 @@ const MonthlyGrowthChart = ({ transactions }: any) => {
         }
         const ctx = canvasRef.current.getContext('2d');
         chartRef.current = new Chart(ctx, { type: 'bar', data: { labels, datasets: [{ label: 'Faturamento Real', data: dataSet, backgroundColor: '#3b82f6', borderRadius: 8 }] }, options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } } } } });
-    }, [transactions]);
+    }, [transactions, settings]);
     return <canvas ref={canvasRef} height="120"></canvas>;
 };
 

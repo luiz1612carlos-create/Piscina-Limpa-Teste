@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { AppContextType, ChatSession, ChatMessage } from '../../types';
 import { Button } from '../../components/Button';
@@ -13,7 +12,10 @@ interface LiveChatViewProps {
 const toDate = (timestamp: any): Date | null => {
     if (!timestamp) return null;
     if (typeof timestamp.toDate === 'function') return timestamp.toDate();
-    if (typeof timestamp === 'string') return new Date(timestamp);
+    if (typeof timestamp === 'string') {
+        const d = new Date(timestamp);
+        return isNaN(d.getTime()) ? null : d;
+    }
     if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
     return null;
 };
@@ -28,42 +30,44 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
 
     const activeSession = chatSessions.find(s => s.id === selectedSessionId);
 
+    // Limpa notificações e reseta status visual ao selecionar a conversa
+    useEffect(() => {
+        if (selectedSessionId && activeSession) {
+            if (activeSession.unreadCount > 0 || activeSession.status === 'waiting') {
+                // Atualiza no banco para sincronizar com todos os admins
+                db.collection('chatSessions').doc(selectedSessionId).update({ 
+                    unreadCount: 0,
+                    status: 'human' // Assume atendimento ao clicar
+                }).catch(console.error);
+            }
+        }
+    }, [selectedSessionId, activeSession?.unreadCount, activeSession?.status]);
+
     useEffect(() => {
         if (!selectedSessionId) {
             setMessages([]);
             return;
         }
 
-        console.log(`🔍 Escutando mensagens da sessão: ${selectedSessionId}`);
-
-        // Listener para a sub-coleção de mensagens
         const unsub = db.collection('chatSessions')
             .doc(selectedSessionId)
             .collection('messages')
             .orderBy('timestamp', 'asc')
             .onSnapshot((snapshot: any) => {
-                // Sincronizar mensagens
                 const msgs = snapshot.docs.map((doc: any) => ({
                     id: doc.id,
                     ...doc.data()
                 } as ChatMessage));
-                
                 setMessages(msgs);
-                
-                // Marcar como lido ao abrir ou receber nova mensagem enquanto focado
-                if (activeSession && activeSession.unreadCount > 0) {
-                    db.collection('chatSessions').doc(selectedSessionId).update({ unreadCount: 0 }).catch(() => {});
-                }
             }, (error: any) => {
                 console.error("❌ Erro no listener de mensagens:", error);
                 showNotification('Erro ao sincronizar mensagens.', 'error');
             });
 
         return () => unsub();
-    }, [selectedSessionId, activeSession?.id]);
+    }, [selectedSessionId]);
 
     useEffect(() => {
-        // Scroll suave para a última mensagem
         if (messages.length > 0) {
             chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
@@ -81,7 +85,7 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
             await sendAdminChatMessage(selectedSessionId, messageText);
         } catch (error) {
             showNotification('Falha ao enviar mensagem via WhatsApp.', 'error');
-            setInput(messageText); // Devolver o texto para tentar de novo
+            setInput(messageText);
         } finally {
             setIsSending(false);
         }
@@ -100,9 +104,15 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
 
     if (loading.chatSessions) return <div className="flex justify-center p-20"><Spinner size="lg" /></div>;
 
+    // Ordenação melhorada para lidar com timestamps pendentes
+    const sortedSessions = [...chatSessions].sort((a, b) => {
+        const timeA = toDate(a.lastMessageAt)?.getTime() || Date.now() + 1000; // Prioriza mensagens novas sem timestamp resolvido
+        const timeB = toDate(b.lastMessageAt)?.getTime() || Date.now() + 1000;
+        return timeB - timeA;
+    });
+
     return (
-        <div className="h-[calc(100vh-160px)] flex flex-col md:flex-row gap-6">
-            {/* Lista de Conversas */}
+        <div className="h-[calc(100vh-160px)] flex flex-col md:flex-row gap-6 animate-fade-in">
             <div className="w-full md:w-80 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-lg border dark:border-gray-700 overflow-hidden">
                 <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border-b dark:border-gray-700 font-black text-xs uppercase tracking-widest text-gray-500 text-center">
                     Conversas Ativas ({chatSessions.length})
@@ -111,7 +121,7 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
                     {chatSessions.length === 0 ? (
                         <div className="p-10 text-center text-gray-400 text-sm italic">Nenhuma conversa no momento.</div>
                     ) : (
-                        chatSessions.map(session => (
+                        sortedSessions.map(session => (
                             <button
                                 key={session.id}
                                 onClick={() => setSelectedSessionId(session.id)}
@@ -131,29 +141,23 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
                                     </div>
                                     <p className="text-xs text-gray-500 truncate">{session.lastMessage || 'Nova conversa...'}</p>
                                 </div>
-                                {session.status === 'waiting' && (
-                                    <div className="absolute top-2 right-2">
-                                        <div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                                    </div>
-                                )}
                             </button>
                         ))
                     )}
                 </div>
             </div>
 
-            {/* Janela de Chat */}
             <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-lg border dark:border-gray-700 overflow-hidden">
                 {activeSession ? (
                     <>
                         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border-b dark:border-gray-700 flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-primary-500 rounded-full flex items-center justify-center text-white font-bold">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${activeSession.status === 'waiting' ? 'bg-red-500' : 'bg-primary-500'}`}>
                                     {activeSession.clientName.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-sm">{activeSession.clientName}</h3>
-                                    <span className={`text-[10px] font-black uppercase tracking-widest ${activeSession.status === 'waiting' ? 'text-red-500' : 'text-green-500'}`}>
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${activeSession.status === 'waiting' ? 'text-red-500 animate-pulse' : 'text-green-500'}`}>
                                         {activeSession.status === 'waiting' ? '● Aguardando Atendimento' : '● Em Atendimento Humano'}
                                     </span>
                                 </div>
@@ -173,7 +177,7 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
                                             {msg.sender === 'admin' && <span className="text-[9px] font-black uppercase mb-1 opacity-60">Administrador</span>}
                                             <p className="whitespace-pre-wrap">{msg.text}</p>
                                             <div className="text-[9px] text-right mt-1 opacity-50 flex items-center justify-end gap-1">
-                                                {toDate(msg.timestamp)?.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) || 'Enviando...'}
+                                                {toDate(msg.timestamp)?.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) || '...'}
                                                 {msg.sender !== 'client' && <CheckBadgeIcon className="w-2.5 h-2.5" />}
                                             </div>
                                         </div>
@@ -184,21 +188,9 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
                         </div>
 
                         <form onSubmit={handleSend} className="p-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-800 flex gap-2">
-                            <input 
-                                className="flex-1 bg-white dark:bg-gray-800 border-none rounded-full px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500 text-sm shadow-inner dark:text-white" 
-                                value={input} 
-                                onChange={e => setInput(e.target.value)} 
-                                placeholder="Responda para o WhatsApp do cliente..." 
-                                autoComplete="off"
-                            />
-                            <button 
-                                type="submit" 
-                                disabled={!input.trim() || isSending}
-                                className="bg-primary-600 text-white p-3 rounded-full shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isSending ? <Spinner size="sm" /> : (
-                                    <svg viewBox="0 0 24 24" width="24" height="24" className="fill-current rotate-45"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
-                                )}
+                            <input className="flex-1 bg-white dark:bg-gray-800 border-none rounded-full px-4 py-3 outline-none focus:ring-2 focus:ring-primary-500 text-sm shadow-inner dark:text-white" value={input} onChange={e => setInput(e.target.value)} placeholder="Escreva uma mensagem para o cliente..." autoComplete="off" />
+                            <button type="submit" disabled={!input.trim() || isSending} className="bg-primary-600 text-white p-3 rounded-full shadow-lg active:scale-95 transition-all disabled:opacity-50">
+                                {isSending ? <Spinner size="sm" /> : <svg viewBox="0 0 24 24" width="24" height="24" className="fill-current rotate-45"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>}
                             </button>
                         </form>
                     </>

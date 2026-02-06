@@ -30,7 +30,6 @@ const App: React.FC = () => {
     const [logoLoaded, setLogoLoaded] = useState(false);
     const imgRef = useRef<HTMLImageElement>(null);
 
-    // Corrigido: Dependência de logoError removida para evitar loop infinito
     useEffect(() => {
         setLogoError(false);
         setLogoLoaded(false);
