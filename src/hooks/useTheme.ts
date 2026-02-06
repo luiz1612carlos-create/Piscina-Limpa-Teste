@@ -1,6 +1,8 @@
+
 import { useState, useEffect } from 'react';
 
 export const useTheme = () => {
+    // Define 'dark' como padrão se não houver nada salvo no localStorage
     const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
 
     useEffect(() => {

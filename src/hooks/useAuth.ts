@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
 import { UserData } from '../types';
@@ -18,6 +19,7 @@ export const useAuth = () => {
                     setUserData(null);
                     setLoading(false);
                 } else {
+                    // Importante: Só marcamos loading como false após o primeiro snapshot (sucesso ou erro)
                     unsubscribeDoc = db.collection('users').doc(firebaseUser.uid).onSnapshot((doc: any) => {
                         if (doc.exists) {
                             setUserData(doc.data() as UserData);
@@ -47,6 +49,10 @@ export const useAuth = () => {
         return auth.signInWithEmailAndPassword(email, pass);
     };
 
+    const loginAnonymously = () => {
+        return auth.signInAnonymously();
+    };
+
     const logout = () => {
         return auth.signOut();
     };
@@ -65,6 +71,7 @@ export const useAuth = () => {
         loading, 
         isAnonymous: user?.isAnonymous || false,
         login, 
+        loginAnonymously, 
         logout, 
         changePassword 
     };

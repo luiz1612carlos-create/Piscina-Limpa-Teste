@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { db, firebase, auth, storage, firebaseConfig } from '../firebase';
 import {
@@ -10,20 +11,45 @@ import {
 import { compressImage } from '../utils/calculations';
 
 const isObject = (item: any) => (item && typeof item === 'object' && !Array.isArray(item));
-const deepMerge = (target: any, ...sources: any[]): any => {
-    if (!sources.length) return target;
-    const source = sources.shift();
-    if (isObject(target) && isObject(source)) {
-        for (const key in source) {
-            if (isObject(source[key])) {
-                if (!target[key]) Object.assign(target, { [key]: {} });
-                deepMerge(target[key], source[key]);
+
+/**
+ * Função de limpeza recursiva para remover campos undefined antes de salvar no Firestore.
+ */
+const sanitizeData = (obj: any): any => {
+    if (!isObject(obj)) return obj;
+    const clean: any = {};
+    Object.keys(obj).forEach(key => {
+        const val = obj[key];
+        if (val !== undefined) {
+            if (isObject(val) && !(val instanceof Date)) {
+                clean[key] = sanitizeData(val);
             } else {
-                Object.assign(target, { [key]: source[key] });
+                clean[key] = val;
             }
         }
+    });
+    return clean;
+};
+
+/**
+ * Função de mesclagem profunda corrigida.
+ */
+const deepMerge = (target: any, source: any): any => {
+    const output = { ...target };
+    if (isObject(target) && isObject(source)) {
+        Object.keys(source).forEach(key => {
+            if (isObject(source[key])) {
+                if (!(key in target)) {
+                    Object.assign(output, { [key]: source[key] });
+                } else {
+                    output[key] = deepMerge(target[key], source[key]);
+                }
+            } else {
+                Object.assign(output, { [key]: source[key] });
+            }
+        });
     }
-    return deepMerge(target, ...sources);
+    return output;
 };
 
 const defaultSettings: Settings = {
@@ -90,16 +116,32 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         setLoading(prev => (prev[key] === value ? prev : { ...prev, [key]: value }));
     }, []);
 
+    // 1. Snapshot de Settings
     useEffect(() => {
-        if (!user) return;
+        const unsub = db.collection('settings').doc('main').onSnapshot(doc => {
+            if (doc.exists) {
+                setSettings(deepMerge(defaultSettings, doc.data()));
+            } else {
+                setSettings(defaultSettings);
+            }
+            setLoadingState('settings', false);
+        }, (err: any) => {
+            console.error("Settings error:", err);
+            setSettings(defaultSettings);
+            setLoadingState('settings', false);
+        });
+        return () => unsub();
+    }, [setLoadingState]);
+
+    // 2. Outros Snapshots
+    useEffect(() => {
+        if (!user) {
+            setClients([]);
+            setOrders([]);
+            return;
+        }
         
         const unsubs: (() => void)[] = [];
-
-        unsubs.push(db.collection('settings').doc('main').onSnapshot(doc => {
-            if (doc.exists) setSettings(deepMerge(JSON.parse(JSON.stringify(defaultSettings)), doc.data()));
-            else setSettings(defaultSettings);
-            setLoadingState('settings', false);
-        }, () => setLoadingState('settings', false)));
 
         if (isUserAdmin || isUserTechnician) {
             const sync = (col: string, set: Function, load: keyof typeof loading, order?: string) => {
@@ -184,7 +226,30 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         return !!(settings?.features.advancePaymentPlanEnabled && advancePlanUsage.percentage < 10);
     }, [settings, advancePlanUsage]);
 
-    const updateSettings = useCallback(async (s: Partial<Settings>) => { await db.collection('settings').doc('main').set(s, { merge: true }); }, []);
+    const updateSettings = useCallback(async (newSettings: Partial<Settings>, logoFile?: File, removeLogo?: boolean, onProgress?: (progress: number) => void) => {
+        // Limpar dados antes de enviar
+        const finalData = sanitizeData({ ...newSettings });
+
+        if (removeLogo) {
+            finalData.logoUrl = firebase.firestore.FieldValue.delete();
+        } else if (logoFile) {
+            const ref = storage.ref(`logos/logo_${Date.now()}`);
+            const uploadTask = ref.put(logoFile);
+            await new Promise<void>((resolve, reject) => {
+                uploadTask.on('state_changed', 
+                    (snap: any) => onProgress?.((snap.bytesTransferred / snap.totalBytes) * 100),
+                    reject,
+                    async () => {
+                        finalData.logoUrl = await uploadTask.snapshot.ref.getDownloadURL();
+                        resolve();
+                    }
+                );
+            });
+        }
+
+        await db.collection('settings').doc('main').set(finalData, { merge: true });
+    }, []);
+
     const createBudgetQuote = useCallback(async (b: any) => { await db.collection('pre-budgets').add({ ...b, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
     const createOrder = useCallback(async (o: any) => { await db.collection('orders').add({ ...o, createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
 
@@ -211,7 +276,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
                 });
                 return;
             }
-
             if (!res.ok) throw new Error('Erro na API de Chat');
         } catch (error) {
             console.error("Erro ao enviar chat:", error);
@@ -250,6 +314,7 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     }, []);
 
     const rejectBudgetQuote = useCallback(async (id: string) => { await db.collection('pre-budgets').doc(id).delete(); }, []);
+    
     const markAsPaid = useCallback(async (client: Client, months: number, total: number) => {
         if (!client.bankId) throw new Error("Associe um banco.");
         const batch = db.batch();
@@ -258,7 +323,26 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         next.setMonth(next.getMonth() + months);
         batch.update(db.collection('clients').doc(client.id), { 'payment.dueDate': next.toISOString(), 'payment.status': 'Pago' });
         await batch.commit();
-    }, []);
+
+        // NOVO: Disparo de Recibo Automático via WhatsApp Cloud API
+        try {
+            const bank = banks.find(b => b.id === client.bankId);
+            fetch('/api/send-receipt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientId: client.id,
+                    clientPhone: client.phone,
+                    clientName: client.name,
+                    amount: total,
+                    paymentMethod: bank?.name || 'Pix/Transferência',
+                    companyName: settings?.companyName || 'S.O.S Piscina Limpa'
+                })
+            }).catch(e => console.error("Erro assíncrono ao disparar recibo:", e));
+        } catch (e) {
+            console.error("Erro ao preparar disparo de recibo:", e);
+        }
+    }, [banks, settings]);
 
     const updateClientStock = useCallback(async (id: string, s: ClientProduct[]) => { await db.collection('clients').doc(id).update({ stock: s }); }, []);
     const scheduleClient = useCallback(async (id: string, day: string) => {
