@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AuthContextType, AppContextType, Client, ReplenishmentQuote, Order, Settings, CartItem, AdvancePaymentRequest, PoolEvent, RecessPeriod, PendingPriceChange, PlanChangeRequest, FidelityPlan, EmergencyRequest, AffectedClientPreview } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
@@ -27,7 +27,6 @@ interface ClientDashboardViewProps {
     appContext: AppContextType;
 }
 
-// FIX: Added helper to safely convert Firebase/String timestamps to Date objects
 const toDate = (timestamp: any): Date | null => {
     if (!timestamp) return null;
     if (typeof timestamp.toDate === 'function') return timestamp.toDate();
@@ -43,12 +42,10 @@ type DashboardTab = 'summary' | 'products' | 'plan' | 'account';
 
 const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, appContext }) => {
     const { user, changePassword, showNotification } = authContext;
-    // FIX: Correctly destructure createAdvancePaymentRequest instead of aliasing createOrder twice
     const { clients, loading, settings, routes, replenishmentQuotes, updateReplenishmentQuoteStatus, createOrder, createAdvancePaymentRequest, isAdvancePlanGloballyAvailable, advancePaymentRequests, banks, poolEvents, createPoolEvent, pendingPriceChanges, planChangeRequests, requestPlanChange, acceptPlanChange, cancelPlanChangeRequest, emergencyRequests, createEmergencyRequest } = appContext;
     
     const [activeTab, setActiveTab] = useState<DashboardTab>('summary');
 
-    // FIX: Memoized client lookup to prevent unnecessary re-renders
     const clientData = useMemo(() => {
         return clients.find((c: Client) => c.uid === user.uid) || null;
     }, [clients, user.uid]);
@@ -67,14 +64,12 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     const [emergencyReason, setEmergencyReason] = useState('');
     const [isSubmittingEmergency, setIsSubmittingEmergency] = useState(false);
 
-    // FIX: Logic for emergency limit checking
     const currentMonthEmergencies = useMemo(() => {
         if (!user || !emergencyRequests) return 0;
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         
         return emergencyRequests.filter((req: EmergencyRequest) => {
-            // FIX: Use toDate instead of non-existent toSafeDate
             const reqDate = toDate(req.createdAt);
             return req.clientId === user.uid && reqDate && reqDate >= startOfMonth;
         }).length;
@@ -82,7 +77,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
     const emergencyLimitReached = currentMonthEmergencies >= 2;
 
-    // FIX: Logic for upcoming recess periods
     const upcomingRecesses = useMemo(() => {
         if (!settings?.recessPeriods) return [];
         const now = new Date();
@@ -108,8 +102,32 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     }, [upcomingRecesses]);
 
     const isInRecess = !!activeRecess;
+
+    // Lógica aprimorada para verificar se o plano adiantado está ativo e calcular prazos de renovação
+    const advancePlanInfo = useMemo(() => {
+        if (!clientData?.advancePaymentUntil) return null;
+        const today = new Date();
+        const advanceUntil = toDate(clientData.advancePaymentUntil);
+        
+        if (advanceUntil && advanceUntil > today) {
+            // A cobertura real vai até um dia antes do próximo vencimento
+            const coverageEnd = new Date(advanceUntil);
+            coverageEnd.setDate(coverageEnd.getDate() - 1);
+            
+            const diffTime = advanceUntil.getTime() - today.getTime();
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            return {
+                active: true,
+                renewalDate: advanceUntil,
+                coverageEnd: coverageEnd,
+                isExpiringSoon: diffDays <= 2, // 2 dias antes: Aviso na conta
+                showRenewalButton: diffDays <= 1 // 1 dia antes: Botão na dashboard
+            };
+        }
+        return null;
+    }, [clientData]);
     
-    // FIX: Optimized next visit calculation using routes state
     const nextVisit = useMemo(() => {
         if (!clientData || !routes) return null;
         const dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -135,14 +153,15 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
     const mostRecentRequest = useMemo(() => {
         if (!clientData || !advancePaymentRequests || advancePaymentRequests.length === 0) return null;
-        return advancePaymentRequests[0];
+        const clientRequests = advancePaymentRequests.filter(r => r.clientId === clientData.uid || r.clientId === clientData.id);
+        return clientRequests[0] || null;
     }, [clientData, advancePaymentRequests]);
 
     const showStatusCard = useMemo(() => {
         if (!mostRecentRequest) return false;
         if (mostRecentRequest.status === 'pending') return true;
         const updatedAt = toDate(mostRecentRequest.updatedAt);
-        if (!updatedAt) return false;
+        if (!updatedAt) return mostRecentRequest.status !== 'approved'; // Se aprovado e sem updatedAt ainda, esconde (para evitar loading infinito)
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         return updatedAt > threeDaysAgo;
@@ -356,6 +375,20 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 {activeTab === 'summary' && (
                     <div className="space-y-6 animate-fade-in text-gray-800 dark:text-gray-100">
                         <div className="space-y-4">
+                            {/* Transparência: Badge de Plano Adiantado Ativo com datas claras */}
+                            {advancePlanInfo?.active && (
+                                <div className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white p-4 rounded-xl shadow-lg border border-yellow-400 flex items-center gap-3 animate-fade-in">
+                                    <SparklesIcon className="w-8 h-8 flex-shrink-0" />
+                                    <div>
+                                        <p className="font-black text-sm uppercase tracking-wider">Plano Adiantado Ativo</p>
+                                        <div className="space-y-0.5">
+                                            <p className="text-xs opacity-95">Manutenção coberta até: <strong>{advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}</strong></p>
+                                            <p className="text-[10px] bg-white/20 px-2 py-0.5 rounded inline-block font-bold">Próximo vencimento/renovação: {advancePlanInfo.renewalDate.toLocaleDateString('pt-BR')}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {settings.googleReviewUrl && (
                                 <Card className="border border-blue-100 bg-gradient-to-br from-white to-blue-50/50 dark:from-gray-800 dark:to-blue-900/10 overflow-hidden relative group">
                                     <div className="absolute -right-10 -top-10 bg-blue-500/10 w-40 h-40 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all duration-700"></div>
@@ -419,11 +452,19 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                 </Card>
                             )}
 
-                            {isAdvancePlanGloballyAvailable && !isBlockedByDueDate && (
-                                <div className="bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl p-6 shadow-lg">
-                                    <h3 className="text-xl font-black mb-1">{settings.features.advancePaymentTitle}</h3>
-                                    <p className="text-sm opacity-90 mb-4">{clientData.plan === 'VIP' ? settings.features.advancePaymentSubtitleVIP : settings.features.advancePaymentSubtitleSimple}</p>
-                                    <Button variant="light" size="sm" onClick={() => setIsAdvanceModalOpen(true)}>Ver Descontos</Button>
+                            {isAdvancePlanGloballyAvailable && !isBlockedByDueDate && (!advancePlanInfo?.active || (advancePlanInfo?.active && advancePlanInfo.showRenewalButton)) && (
+                                <div className="bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl p-6 shadow-lg animate-fade-in">
+                                    <h3 className="text-xl font-black mb-1">
+                                        {advancePlanInfo?.active ? "🕒 Hora de Renovar!" : settings.features.advancePaymentTitle}
+                                    </h3>
+                                    <p className="text-sm opacity-90 mb-4">
+                                        {advancePlanInfo?.active 
+                                            ? "Sua cobertura acaba amanhã. Renove agora para garantir os descontos no próximo lote!" 
+                                            : (clientData.plan === 'VIP' ? settings.features.advancePaymentSubtitleVIP : settings.features.advancePaymentSubtitleSimple)}
+                                    </p>
+                                    <Button variant="light" size="sm" onClick={() => setIsAdvanceModalOpen(true)}>
+                                        {advancePlanInfo?.active ? 'Renovar Adiantamento' : 'Ver Descontos'}
+                                    </Button>
                                 </div>
                             )}
 
@@ -470,7 +511,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                         </div>
                                         <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-yellow-900 dark:text-yellow-100">
                                             <p className="text-xs text-gray-500">Cloro</p>
-                                            <p className="text-2xl font-black text-yellow-600 dark:text-yellow-400">{clientData.poolStatus.cloro.toFixed(1)}</p>
+                                            <p className="text-2xl font-black text-yellow-600 dark:text-blue-400">{clientData.poolStatus.cloro.toFixed(1)}</p>
                                         </div>
                                         <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-900 dark:text-purple-100">
                                             <p className="text-xs text-gray-500">Alcalinidade</p>
@@ -503,16 +544,46 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                     </CardContent>
                                 </Card>
 
-                                <Card>
-                                    <CardHeader><h3 className="font-bold">Histórico de Visitas</h3></CardHeader>
-                                    <CardContent className="max-h-64 overflow-y-auto space-y-3 no-scrollbar text-gray-800 dark:text-gray-200">
-                                        {clientData.visitHistory?.length ? [...clientData.visitHistory].sort((a: any, b: any) => (toDate(b.timestamp)?.getTime() || 0) - (toDate(a.timestamp)?.getTime() || 0)).slice(0, 5).map((visit: any) => (
-                                            <div key={visit.id} className="p-3 border-l-4 border-primary-500 bg-gray-50 dark:bg-gray-700/50 rounded-r-lg text-sm">
-                                                <p className="font-bold text-gray-900 dark:text-white">{toDate(visit.timestamp)?.toLocaleDateString('pt-BR')}</p>
-                                                <p className="text-xs text-gray-500 dark:text-gray-400">pH: {visit.ph} | Cloro: {visit.cloro} | {visit.uso}</p>
-                                                {visit.photoUrl && <a href={visit.photoUrl} target="_blank" rel="noreferrer" className="text-primary-500 text-xs font-bold mt-1 inline-block">Ver Foto</a>}
+                                <Card data-tour-id="payment">
+                                    <CardHeader data-tour-id="payment-header" className="flex justify-between items-center">
+                                        <h3 className="font-bold">Dados de Pagamento</h3>
+                                        <span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${clientData.payment.status === 'Pago' ? 'bg-green-100 text-green-700 dark:bg-green-900/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30 animate-pulse'}`}>
+                                            {clientData.payment.status}
+                                        </span>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-[10px] text-gray-400 uppercase font-black">Mensalidade</p>
+                                                <p className="text-xl font-black text-primary-600 dark:text-primary-400">R$ {monthlyFee.toFixed(2)}</p>
                                             </div>
-                                        )) : <p className="text-center text-gray-400 text-sm py-4">Nenhuma visita registrada.</p>}
+                                            <div>
+                                                <p className="text-[10px] text-gray-400 uppercase font-black">Vencimento</p>
+                                                <p className="text-xl font-black text-gray-800 dark:text-white">
+                                                    {toDate(clientData.payment.dueDate)?.toLocaleDateString('pt-BR') || '---'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        
+                                        {advancePlanInfo?.active && (
+                                            <div className="p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-100 dark:border-yellow-800 rounded flex flex-col gap-1">
+                                                <div className="flex items-center gap-2">
+                                                    <SparklesIcon className="w-4 h-4 text-yellow-600" />
+                                                    <span className="text-[10px] font-bold text-yellow-700 dark:text-yellow-400 uppercase">PLANO ADIANTADO ATIVO</span>
+                                                </div>
+                                                <p className="text-[9px] text-yellow-600 dark:text-yellow-500 italic">O serviço está garantido até {advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}.</p>
+                                            </div>
+                                        )}
+
+                                        <div className="pt-2 border-t dark:border-gray-700">
+                                            <p className="text-[10px] text-gray-400 uppercase font-black mb-1">Chave PIX para pagamento:</p>
+                                            <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900/50 p-2 rounded-lg border dark:border-gray-700">
+                                                <code className="text-xs font-mono truncate flex-1">{pixKeyToDisplay}</code>
+                                                <button onClick={() => copyToClipboard(pixKeyToDisplay)} className="p-1 hover:text-primary-500 transition-colors">
+                                                    <CopyIcon className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </CardContent>
                                 </Card>
                             </div>
@@ -538,7 +609,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                                 </span>
                                             </div>
                                             <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2 mb-2">
-                                                <div className={`h-2 rounded-full transition-all ${lowStock ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${percentage}%` }}></div>
+                                                <div className={`h-2 rounded-full transition-all ${lowStock ? 'bg-red-500' : 'bg-green-50'}`} style={{ width: `${percentage}%` }}></div>
                                             </div>
                                             {lowStock && <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest">⚠️ Estoque Baixo</p>}
                                         </div>
@@ -560,7 +631,10 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                             <CardHeader><h3 className="font-bold">Detalhes do Plano</h3></CardHeader>
                             <CardContent className="space-y-6">
                                 <div>
-                                    <h4 className={`text-3xl font-black ${currentPlanDetails.planType === 'VIP' ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary-600 dark:text-primary-400'}`}>{currentPlanDetails.title}</h4>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <h4 className={`text-3xl font-black ${currentPlanDetails.planType === 'VIP' ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary-600 dark:text-primary-400'}`}>{currentPlanDetails.title}</h4>
+                                        {advancePlanInfo?.active && <span className="bg-yellow-100 text-yellow-700 text-[10px] px-2 py-0.5 rounded font-black uppercase">PROMO ATIVA</span>}
+                                    </div>
                                     {currentPlanDetails.fidelity && (
                                         <p className="text-sm font-bold text-gray-500">Fidelidade: {currentPlanDetails.fidelity.months} meses ({currentPlanDetails.fidelity.discountPercent}% OFF)</p>
                                     )}
@@ -585,25 +659,65 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 {activeTab === 'account' && (
                     <div className="space-y-6 animate-fade-in text-gray-800 dark:text-gray-100">
                         <Card>
-                            <CardHeader><h3 className="font-bold">Dados Cadastrais</h3></CardHeader>
-                            <CardContent className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <CardHeader><h3 className="font-bold">Dados Cadastrais e Situação do Plano</h3></CardHeader>
+                            <CardContent className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     <div><p className="text-xs text-gray-400 uppercase font-black">Nome</p><p className="font-bold text-gray-900 dark:text-white">{clientData.name}</p></div>
                                     <div><p className="text-xs text-gray-400 uppercase font-black">E-mail de Acesso</p><p className="font-bold text-gray-900 dark:text-white">{clientData.email}</p></div>
                                     <div><p className="text-xs text-gray-400 uppercase font-black">Telefone</p><p className="font-bold text-gray-900 dark:text-white">{clientData.phone}</p></div>
-                                    <div><p className="text-xs text-gray-400 uppercase font-black">Mensalidade</p><p className="font-bold text-primary-600 dark:text-primary-400">R$ {monthlyFee.toFixed(2)}</p></div>
+                                    <div><p className="text-xs text-gray-400 uppercase font-black">Mensalidade Atual</p><p className="font-bold text-primary-600 dark:text-primary-400">R$ {monthlyFee.toFixed(2)}</p></div>
+                                </div>
+                                
+                                <div className="pt-6 border-t dark:border-gray-700 space-y-4">
+                                    <h4 className="text-sm font-black uppercase text-gray-500 tracking-widest">Informações de Cobrança e Benefícios</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                                            <p className="text-[10px] text-gray-400 uppercase font-black mb-1">Status da Última Fatura</p>
+                                            <p className={`font-black text-lg ${clientData.payment.status === 'Pago' ? 'text-green-600' : 'text-red-600'}`}>
+                                                {clientData.payment.status.toUpperCase()}
+                                            </p>
+                                        </div>
+                                        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                                            <p className="text-[10px] text-gray-400 uppercase font-black mb-1">Data de Renovação</p>
+                                            <p className="font-black text-lg text-gray-800 dark:text-white">
+                                                {toDate(clientData.payment.dueDate)?.toLocaleDateString('pt-BR') || '---'}
+                                            </p>
+                                        </div>
+                                        {advancePlanInfo?.active && (
+                                            <div className="md:col-span-2 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-100 dark:border-yellow-800 space-y-3">
+                                                <div className="flex items-center gap-3">
+                                                    <SparklesIcon className="w-6 h-6 text-yellow-600" />
+                                                    <div>
+                                                        <p className="text-[10px] text-yellow-700 dark:text-yellow-400 uppercase font-black">Plano Promocional Ativo</p>
+                                                        <p className="text-sm font-bold text-yellow-800 dark:text-yellow-100">
+                                                            Sua manutenção já está quitada e coberta até o dia {advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {advancePlanInfo.isExpiringSoon ? (
+                                                    <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-[11px] text-red-900 dark:text-red-200 border border-red-200/50 animate-pulse">
+                                                        <strong>⚠️ RENOVAÇÃO PENDENTE:</strong> Sua cobertura termina em breve. Amanhã, o botão de renovação estará disponível na aba <strong>Início</strong> para garantir o valor promocional do próximo ciclo.
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-3 bg-white/40 dark:bg-black/20 rounded-lg text-[11px] text-yellow-900 dark:text-yellow-200 border border-yellow-200/50">
+                                                        <strong>💡 Dica de Economia:</strong> Para renovar seu desconto e garantir o valor promocional, você deve solicitar um novo adiantamento na aba <strong>Início</strong> no dia anterior ao vencimento ({advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}).
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </CardContent>
                         </Card>
                         <Card>
-                            <CardHeader><h3 className="font-bold">Segurança</h3></CardHeader>
+                            <CardHeader><h3 className="font-bold">Segurança da Conta</h3></CardHeader>
                             <CardContent>
                                 <form onSubmit={handlePasswordChange} className="space-y-4">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <Input label="Nova Senha" type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
                                         <Input label="Confirme a Senha" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
                                     </div>
-                                    <Button type="submit" isLoading={isSavingPassword} className="w-full md:w-auto">Atualizar Senha</Button>
+                                    <Button type="submit" isLoading={isSavingPassword} className="w-full md:w-auto">Atualizar Senha de Acesso</Button>
                                 </form>
                             </CardContent>
                         </Card>
@@ -697,8 +811,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     );
 };
 
-// FIX: Sub-components moved outside the main component for clarity and to resolve "Cannot find name" errors
-
 const PriceChangeNotificationCard = ({ notification, currentFee }: { notification: PendingPriceChange, currentFee: number }) => (
     <Card className="border-l-8 border-blue-500 bg-blue-50 dark:bg-blue-900/10">
         <CardContent className="flex items-center gap-4 py-4">
@@ -759,20 +871,29 @@ const ReplenishmentCard = ({ quote, client, updateStatus, createOrder, showNotif
     );
 };
 
-const RequestStatusCard = ({ request }: { request: AdvancePaymentRequest }) => (
-    <Card className={`border-l-8 ${request.status === 'rejected' ? 'border-red-500' : 'border-yellow-500'}`}>
-        <CardContent className="flex items-center gap-4 py-4">
-            <div className={`p-2 rounded-full ${request.status === 'rejected' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'}`}>
-                {request.status === 'rejected' ? <XMarkIcon className="w-6 h-6"/> : <Spinner size="sm"/>}
-            </div>
-            <div>
-                <h4 className="font-black uppercase text-xs tracking-widest text-gray-400">Solicitação de Adiantamento</h4>
-                <p className="font-bold dark:text-white">{request.status === 'pending' ? 'Em análise pela administração' : 'Solicitação não aprovada'}</p>
-                {request.status === 'rejected' && <p className="text-xs text-red-500 mt-1">O financeiro não identificou o pagamento deste lote.</p>}
-            </div>
-        </CardContent>
-    </Card>
-);
+const RequestStatusCard = ({ request }: { request: AdvancePaymentRequest }) => {
+    const isApproved = request.status === 'approved';
+    const isRejected = request.status === 'rejected';
+    const isPending = request.status === 'pending';
+
+    return (
+        <Card className={`border-l-8 ${isRejected ? 'border-red-500' : isApproved ? 'border-green-500' : 'border-yellow-500'}`}>
+            <CardContent className="flex items-center gap-4 py-4">
+                <div className={`p-2 rounded-full ${isRejected ? 'bg-red-100 text-red-600' : isApproved ? 'bg-green-100 text-green-600' : 'bg-yellow-100 text-yellow-600'}`}>
+                    {isRejected ? <XMarkIcon className="w-6 h-6"/> : isApproved ? <CheckIcon className="w-6 h-6" /> : <Spinner size="sm"/>}
+                </div>
+                <div>
+                    <h4 className="font-black uppercase text-xs tracking-widest text-gray-400">Solicitação de Adiantamento</h4>
+                    <p className="font-bold dark:text-white">
+                        {isPending ? 'Em análise pela administração' : isApproved ? 'Solicitação aprovada com sucesso!' : 'Solicitação não aprovada'}
+                    </p>
+                    {isRejected && <p className="text-xs text-red-500 mt-1">O financeiro não identificou o pagamento deste lote.</p>}
+                    {isApproved && <p className="text-xs text-green-600 mt-1">Seu plano foi atualizado. Verifique os novos prazos na aba Conta.</p>}
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
 
 const EventSchedulerCard = ({ client, poolEvents, createPoolEvent, showNotification }: any) => {
     const [date, setDate] = useState('');

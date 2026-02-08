@@ -79,6 +79,7 @@ const toDate = (timestamp: any): Date | null => {
         const d = new Date(timestamp);
         return isNaN(d.getTime()) ? null : d;
     }
+    if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
     return null;
 };
 
@@ -395,8 +396,90 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const updateReplenishmentQuoteStatus = useCallback(async (id: string, s: ReplenishmentQuoteStatus) => { await db.collection('replenishmentQuotes').doc(id).update({ status: s }); }, []);
     const triggerReplenishmentAnalysis = useCallback(async () => 0, []);
     const createAdvancePaymentRequest = useCallback(async (r: any) => { await db.collection('advancePaymentRequests').add({ ...r, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
-    const approveAdvancePaymentRequest = useCallback(async (id: string) => { /* logic */ }, []);
-    const rejectAdvancePaymentRequest = useCallback(async (id: string) => { await db.collection('advancePaymentRequests').doc(id).update({ status: 'rejected' }); }, []);
+    
+    const approveAdvancePaymentRequest = useCallback(async (id: string) => {
+        const reqDoc = await db.collection('advancePaymentRequests').doc(id).get();
+        if (!reqDoc.exists) throw new Error("Solicitação não encontrada.");
+        const request = reqDoc.data() as AdvancePaymentRequest;
+
+        // Busca resiliente (tenta por UID do campo ou ID do documento do cliente)
+        let clientDocRef = null;
+        let clientData = null;
+
+        const clientByUidQuery = await db.collection('clients').where('uid', '==', request.clientId).limit(1).get();
+        
+        if (!clientByUidQuery.empty) {
+            clientDocRef = clientByUidQuery.docs[0].ref;
+            clientData = clientByUidQuery.docs[0].data() as Client;
+        } else {
+            // Tenta por Document ID direto (caso tenha sido salvo assim)
+            const clientByIdDoc = await db.collection('clients').doc(request.clientId).get();
+            if (clientByIdDoc.exists) {
+                clientDocRef = clientByIdDoc.ref;
+                clientData = clientByIdDoc.data() as Client;
+            }
+        }
+
+        if (!clientDocRef || !clientData) throw new Error("Cliente não localizado para processar adiantamento.");
+        
+        const batch = db.batch();
+        
+        // 1. Atualizar Solicitação (força status approved para sumir do painel)
+        batch.update(db.collection('advancePaymentRequests').doc(id), { 
+            status: 'approved', 
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
+        });
+
+        // 2. Cálculo da Nova Data de Vencimento com Fallback
+        let currentDueDate = toDate(clientData.payment?.dueDate);
+        if (!currentDueDate) currentDueDate = new Date(); // Se não tiver data, começa de hoje
+        
+        const nextDate = new Date(currentDueDate);
+        nextDate.setMonth(nextDate.getMonth() + request.months);
+
+        // 3. Atualizar Registro do Cliente
+        batch.update(clientDocRef, {
+            'payment.status': 'Pago',
+            'payment.dueDate': nextDate.toISOString(),
+            'advancePaymentUntil': firebase.firestore.Timestamp.fromDate(nextDate)
+        });
+
+        // 4. Registrar Transação Financeira
+        const bank = banks.find(b => b.id === clientData!.bankId);
+        batch.set(db.collection('transactions').doc(), {
+            clientId: clientDocRef.id,
+            clientName: clientData.name,
+            bankId: clientData.bankId || 'advance',
+            bankName: bank?.name || 'Plano Adiantado',
+            amount: request.finalAmount,
+            date: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        await batch.commit();
+
+        // Disparo de Recibo Automático
+        try {
+            fetch('/api/send-receipt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientId: clientDocRef.id,
+                    clientPhone: clientData.phone,
+                    clientName: clientData.name,
+                    amount: request.finalAmount,
+                    paymentMethod: bank?.name || 'Adiantamento',
+                    companyName: settings?.companyName || 'S.O.S Piscina Limpa'
+                })
+            }).catch(() => {});
+        } catch (e) {}
+    }, [banks, settings]);
+
+    const rejectAdvancePaymentRequest = useCallback(async (id: string) => { 
+        await db.collection('advancePaymentRequests').doc(id).update({ 
+            status: 'rejected',
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }); 
+    }, []);
     
     const addVisitRecord = useCallback(async (cid: string, v: any, file?: File, onProgress?: (progress: number) => void) => {
         const visitId = db.collection('clients').doc().id;

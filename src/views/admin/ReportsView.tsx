@@ -2,7 +2,7 @@ import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { AppContextType, Client, Transaction } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
-import { UsersIcon, CurrencyDollarIcon, CheckBadgeIcon, StoreIcon, TrashIcon, CalendarDaysIcon, ChartBarIcon, SparklesIcon } from '../../constants';
+import { UsersIcon, CurrencyDollarIcon, CheckBadgeIcon, StoreIcon, TrashIcon, CalendarDaysIcon, ChartBarIcon, SparklesIcon, ExclamationTriangleIcon } from '../../constants';
 import { Button } from '../../components/Button';
 import { Modal } from '../../components/Modal';
 import { calculateClientMonthlyFee } from '../../utils/calculations';
@@ -43,6 +43,23 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
         return { activeClients: clients.filter(c => c.clientStatus === 'Ativo').length, monthlyRevenue, newBudgets, ordersCount: orders.length };
     }, [clients, orders, budgetQuotes, transactions]);
 
+    // Cálculo dos vencimentos para os próximos 5 dias
+    const upcomingExpirations = useMemo(() => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const limitDate = new Date();
+        limitDate.setDate(now.getDate() + 5);
+        limitDate.setHours(23, 59, 59, 999);
+        
+        return clients
+            .filter(c => {
+                if (c.clientStatus !== 'Ativo') return false;
+                const dueDate = new Date(c.payment.dueDate);
+                return dueDate >= now && dueDate <= limitDate;
+            })
+            .sort((a, b) => new Date(a.payment.dueDate).getTime() - new Date(b.payment.dueDate).getTime());
+    }, [clients]);
+
     const revenueByBank = useMemo(() => {
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -50,14 +67,13 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
                 const d = toDate(t.date);
                 return d && d >= startOfMonth;
             }).reduce((acc, t) => {
-                // CORREÇÃO: Tenta bankName salvo, se não houver, cruza bankId com lista de banks, se não houver, vira "Outros"
                 const activeBank = banks.find(b => b.id === t.bankId);
                 const name = t.bankName || activeBank?.name || 'Não Identificado';
                 
                 acc[name] = (acc[name] || 0) + Number(t.amount || 0);
                 return acc;
             }, {} as { [key: string]: number });
-    }, [transactions, banks]); // DEPENDÊNCIA DE BANKS ADICIONADA
+    }, [transactions, banks]);
 
     if (isCriticalLoading) return <div className="flex justify-center items-center h-full min-h-[400px]"><Spinner size="lg" /></div>;
 
@@ -75,13 +91,41 @@ const ReportsView: React.FC<ReportsViewProps> = ({ appContext }) => {
                 <KpiCard title="Pedidos" value={stats.ordersCount} icon={StoreIcon} color="orange" />
             </div>
 
+            {/* Nova Seção: Vencimentos nos Próximos 5 Dias */}
+            <Card className="border-t-4 border-yellow-500 shadow-xl overflow-hidden">
+                <CardHeader className="bg-yellow-50/30 dark:bg-yellow-900/10 flex items-center justify-between py-3">
+                    <h3 className="font-black text-yellow-700 dark:text-yellow-400 flex items-center gap-2 uppercase tracking-widest text-xs sm:text-sm">
+                        <CalendarDaysIcon className="w-5 h-5" />
+                        Vencimentos nos Próximos 5 Dias
+                    </h3>
+                    <span className="text-[10px] font-black bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 px-2 py-0.5 rounded-full">
+                        {upcomingExpirations.length} AGENDADOS
+                    </span>
+                </CardHeader>
+                <CardContent className="p-0">
+                    <div className="max-h-64 overflow-y-auto no-scrollbar">
+                        <DataTable 
+                            headers={['Cliente', 'Data Venc.', 'Status', 'Valor Previsto']} 
+                            data={upcomingExpirations.map(c => [
+                                <span className="font-bold text-gray-800 dark:text-gray-200">{c.name}</span>,
+                                <span className="font-medium text-gray-600 dark:text-gray-400">{new Date(c.payment.dueDate).toLocaleDateString('pt-BR')}</span>,
+                                <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${c.payment.status === 'Pago' ? 'bg-green-100 text-green-700 dark:bg-green-900/30' : 'bg-red-100 text-red-700 dark:bg-red-900/30 animate-pulse'}`}>
+                                    {c.payment.status}
+                                </span>,
+                                <span className="font-mono text-primary-600 dark:text-primary-400 font-bold">R$ {calculateClientMonthlyFee(c, settings!).toFixed(2)}</span>
+                            ])} 
+                        />
+                    </div>
+                </CardContent>
+            </Card>
+
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
                 <Card className="lg:col-span-3">
-                    <CardHeader className="flex items-center gap-2 font-black"><ChartBarIcon className="w-5 h-5 text-primary-500" /> Crescimento Mensal</CardHeader>
+                    <CardHeader className="flex items-center gap-2 font-black"><ChartBarIcon className="w-5 h-5 text-primary-500" /> Crescimento Mensal (Realizado)</CardHeader>
                     <CardContent><MonthlyGrowthChart clients={clients} transactions={transactions} settings={settings} /></CardContent>
                 </Card>
                 <Card className="lg:col-span-2">
-                    <CardHeader className="flex items-center gap-2 font-black"><CurrencyDollarIcon className="w-5 h-5 text-green-500" /> Por Banco (Mês)</CardHeader>
+                    <CardHeader className="flex items-center gap-2 font-black"><CurrencyDollarIcon className="w-5 h-5 text-green-500" /> Por Banco (Mês Atual)</CardHeader>
                     <CardContent><DataTable headers={['Banco', 'Valor']} data={Object.entries(revenueByBank).map(([k, v]) => [k, `R$ ${Number(v).toFixed(2)}`])} /></CardContent>
                 </Card>
             </div>
@@ -103,7 +147,7 @@ const KpiCard = ({ title, value, icon: Icon, color }: any) => (
 );
 
 const DataTable = ({ headers, data }: any) => (
-    <div className="overflow-x-auto w-full"><table className="min-w-full text-sm"><thead className="border-b dark:border-gray-700 text-gray-400 text-[10px] font-black uppercase tracking-tighter"><tr>{headers.map((h:any) => <th key={h} className="text-left p-2">{h}</th>)}</tr></thead><tbody className="divide-y dark:divide-gray-700">{data.length > 0 ? data.map((row:any, i:any) => (<tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/30">{row.map((cell:any, j:any) => <td key={j} className="p-2 py-3">{cell}</td>)}</tr>)) : <tr><td colSpan={headers.length} className="text-center p-10 text-gray-400 italic">Sem registros.</td></tr>}</tbody></table></div>
+    <div className="overflow-x-auto w-full"><table className="min-w-full text-sm"><thead className="border-b dark:border-gray-700 text-gray-400 text-[10px] font-black uppercase tracking-tighter bg-gray-50 dark:bg-gray-800/50"><tr>{headers.map((h:any) => <th key={h} className="text-left p-4">{h}</th>)}</tr></thead><tbody className="divide-y dark:divide-gray-700">{data.length > 0 ? data.map((row:any, i:any) => (<tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/30">{row.map((cell:any, j:any) => <td key={j} className="p-4 py-3">{cell}</td>)}</tr>)) : <tr><td colSpan={headers.length} className="text-center p-10 text-gray-400 italic">Nenhum registro encontrado para este período.</td></tr>}</tbody></table></div>
 );
 
 const MonthlyGrowthChart = ({ clients, transactions, settings }: any) => {
