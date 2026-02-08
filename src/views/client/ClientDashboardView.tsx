@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+// FIX: Added React import to resolve 'Cannot find namespace React' errors
+import React, { useState, useEffect, useMemo } from 'react';
 import { AuthContextType, AppContextType, Client, ReplenishmentQuote, Order, Settings, CartItem, AdvancePaymentRequest, PoolEvent, RecessPeriod, PendingPriceChange, PlanChangeRequest, FidelityPlan, EmergencyRequest, AffectedClientPreview } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
@@ -40,6 +41,7 @@ const toDate = (timestamp: any): Date | null => {
 
 type DashboardTab = 'summary' | 'products' | 'plan' | 'account';
 
+// FIX: Added React namespace import to support React.FC and other React types
 const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, appContext }) => {
     const { user, changePassword, showNotification } = authContext;
     const { clients, loading, settings, routes, replenishmentQuotes, updateReplenishmentQuoteStatus, createOrder, createAdvancePaymentRequest, isAdvancePlanGloballyAvailable, advancePaymentRequests, banks, poolEvents, createPoolEvent, pendingPriceChanges, planChangeRequests, requestPlanChange, acceptPlanChange, cancelPlanChangeRequest, emergencyRequests, createEmergencyRequest } = appContext;
@@ -221,6 +223,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         }
     }, [isPlanUpgradeModalOpen, upgradeOptions, selectedUpgradeOptionId]);
 
+    // FIX: Using React namespace for FormEvent
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword !== confirmPassword) {
@@ -901,6 +904,7 @@ const EventSchedulerCard = ({ client, poolEvents, createPoolEvent, showNotificat
     const [isSaving, setIsSaving] = useState(false);
     const clientEvents = useMemo(() => poolEvents.filter((e: any) => e.clientId === client.uid).sort((a: any, b: any) => (toDate(b.eventDate)?.getTime() || 0) - (toDate(a.eventDate)?.getTime() || 0)), [poolEvents, client.uid]);
 
+    // FIX: Using React namespace for FormEvent
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSaving(true);

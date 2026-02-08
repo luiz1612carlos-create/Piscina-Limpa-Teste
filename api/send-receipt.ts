@@ -30,7 +30,8 @@ export default async function handler(req: any, res: any) {
     const dataPagamento = new Date().toLocaleDateString('pt-BR');
     
     let formattedTo = String(clientPhone).replace(/\D/g, "");
-    if (formattedTo.length >= 10 && !formattedTo.startsWith("55")) {
+    // Ajuste para números estrangeiros: Não força 55 se o número original começa com "+" ou se já parece ter DDI
+    if (!String(clientPhone).trim().startsWith("+") && (formattedTo.length === 10 || formattedTo.length === 11)) {
         formattedTo = "55" + formattedTo;
     }
 

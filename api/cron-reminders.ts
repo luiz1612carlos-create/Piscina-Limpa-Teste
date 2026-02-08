@@ -1,4 +1,4 @@
-import { getDb } from "./firebase/admin";
+import { getDb } from "./firebase/admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
 function calculateFee(client: any, pricing: any) {
@@ -75,7 +75,7 @@ async function sendWhatsAppMessage(to: string, text: string, templateConfig?: { 
   if (!phoneId || !token) return { ok: false, error: "Credenciais de API ausentes" };
 
   let formattedTo = to.replace(/\D/g, "");
-  if (formattedTo.length >= 10 && !formattedTo.startsWith("55")) {
+  if (!to.trim().startsWith("+") && (formattedTo.length === 10 || formattedTo.length === 11)) {
     formattedTo = "55" + formattedTo;
   }
 
@@ -108,11 +108,14 @@ async function sendWhatsAppMessage(to: string, text: string, templateConfig?: { 
   try {
     const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { 
+        "Authorization": `Bearer ${token}`, 
+        "Content-Type": "application/json" 
+      },
       body: JSON.stringify(payload),
     });
     
-    const resData = await response.json();
+    const resData: any = await response.json();
     if (!response.ok) {
         return { ok: false, error: JSON.stringify(resData) };
     }
@@ -133,6 +136,7 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ success: true, message: "Robô desativado nas configurações." });
     }
 
+    // Ajuste de fuso horário BR
     const brNowStr = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
     const brDate = new Date(brNowStr);
     const executionHour = brDate.toLocaleTimeString('pt-BR');
@@ -161,112 +165,104 @@ export default async function handler(req: any, res: any) {
     const mode = billingBot.dryRun ? 'dry-run' : 'live';
 
     for (const doc of clientsSnap.docs) {
-      const client = doc.data();
-      const clientDueDate = toSafeDate(client.payment?.dueDate);
-      const clientDueDateStr = getPureDateString(clientDueDate);
-      summary.processed++;
-      
-      const valorCalculado = calculateFee(client, settings.pricing);
-      const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      
-      let vencimentoCurto = "---";
-      if (clientDueDate) {
-          const dia = String(clientDueDate.getUTCDate()).padStart(2, '0');
-          const mes = String(clientDueDate.getUTCMonth() + 1).padStart(2, '0');
-          vencimentoCurto = `${dia}/${mes}`;
-      }
-
-      const logRef = await db.collection('billing_messages').add({
-        bot: "billingBot",
-        batchId: batchId,
-        customerId: doc.id,
-        customerName: client.name || "N/A",
-        phone: client.phone || "",
-        mode: mode,
-        status: "analyzing",
-        targetDate: targetDateStr,
-        clientDueDate: clientDueDateStr,
-        calculatedValue: valorCalculado,
-        createdAt: FieldValue.serverTimestamp()
-      });
-
-      if (clientDueDateStr !== targetDateStr) {
-        summary.ignored++;
-        await logRef.update({ 
-            status: "ignored_date", 
-            reason: `Data ${clientDueDateStr} não coincide com o alvo de cobrança ${targetDateStr}` 
-        });
-        continue;
-      }
-
-      if (!client.phone) {
-        summary.failed++;
-        await logRef.update({ status: "failed", reason: "Telefone não cadastrado" });
-        continue;
-      }
-
-      if (valorCalculado <= 0) {
-        summary.failed++;
-        await logRef.update({ status: "failed", reason: "Mensalidade calculada como R$ 0,00" });
-        continue;
-      }
-
-      const textVars = {
-        nome: String(client.name || "Cliente"),
-        nome_cliente: String(client.name || "Cliente"),
-        valor: String(valorFormatado),
-        vencimento: vencimentoCurto,
-        data_vencimento: clientDueDate ? clientDueDate.toLocaleDateString('pt-BR') : vencimentoCurto,
-        status: client?.payment?.status || 'Pendente',
-        STATUS_PAGAMENTO: client?.payment?.status || 'Pendente',
-        pix: String(client.pixKey || settings.pixKey || "Não informada"),
-        destinatario: String(client.recipientName || settings.pixKeyRecipient || settings.companyName || "SOS Piscina"),
-        CLIENTE: String(client.name || "Cliente"),
-        VALOR: String(valorFormatado),
-        VENCIMENTO_CURTO: vencimentoCurto
-      };
-
-      const message = replaceVars(billingBot.messageTemplate || "", textVars);
-
-      if (billingBot.dryRun) {
-        summary.sent++;
-        await logRef.update({ 
-            status: "skipped_simulation", 
-            messagePreview: message,
-            variables: textVars,
-            hasTemplate: !!settings.whatsappTemplateName
-        });
-      } else {
-        let templateConfig = undefined;
-        if (settings.whatsappTemplateName) {
-           templateConfig = {
-             name: settings.whatsappTemplateName,
-             language: settings.whatsappTemplateLanguage || "pt_BR",
-             parameters: [
-                { type: "text", text: textVars.nome },
-                { type: "text", text: textVars.valor },
-                { type: "text", text: textVars.vencimento },
-                { type: "text", text: textVars.pix },
-                { type: "text", text: textVars.destinatario }
-             ]
-           };
+      try {
+        const client = doc.data();
+        const clientDueDate = toSafeDate(client.payment?.dueDate);
+        const clientDueDateStr = getPureDateString(clientDueDate);
+        summary.processed++;
+        
+        const valorCalculado = calculateFee(client, settings.pricing);
+        const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        
+        let vencimentoCurto = "---";
+        if (clientDueDate) {
+            const dia = String(clientDueDate.getUTCDate()).padStart(2, '0');
+            const mes = String(clientDueDate.getUTCMonth() + 1).padStart(2, '0');
+            vencimentoCurto = `${dia}/${mes}`;
         }
 
-        const result = await sendWhatsAppMessage(client.phone, message, templateConfig);
-        
-        if (result.ok) {
+        const logRef = await db.collection('billing_messages').add({
+          bot: "billingBot",
+          batchId: batchId,
+          customerId: doc.id,
+          customerName: client.name || "N/A",
+          phone: client.phone || "",
+          mode: mode,
+          status: "analyzing",
+          targetDate: targetDateStr,
+          clientDueDate: clientDueDateStr,
+          calculatedValue: valorCalculado,
+          createdAt: FieldValue.serverTimestamp()
+        });
+
+        if (clientDueDateStr !== targetDateStr) {
+          summary.ignored++;
+          await logRef.update({ 
+              status: "ignored_date", 
+              reason: `Data ${clientDueDateStr} não coincide com o alvo ${targetDateStr}` 
+          });
+          continue;
+        }
+
+        if (!client.phone) {
+          summary.failed++;
+          await logRef.update({ status: "failed", reason: "Telefone ausente" });
+          continue;
+        }
+
+        if (valorCalculado <= 0) {
+          summary.failed++;
+          await logRef.update({ status: "failed", reason: "Valor R$ 0,00" });
+          continue;
+        }
+
+        const textVars = {
+          nome: String(client.name || "Cliente"),
+          nome_cliente: String(client.name || "Cliente"),
+          valor: String(valorFormatado),
+          vencimento: vencimentoCurto,
+          data_vencimento: clientDueDate ? clientDueDate.toLocaleDateString('pt-BR') : vencimentoCurto,
+          status: client?.payment?.status || 'Pendente',
+          pix: String(client.pixKey || settings.pixKey || "Não informada"),
+          destinatario: String(client.recipientName || settings.pixKeyRecipient || settings.companyName || "SOS Piscina")
+        };
+
+        const message = replaceVars(billingBot.messageTemplate || "", textVars);
+
+        if (billingBot.dryRun) {
           summary.sent++;
           await logRef.update({ 
-            status: "sent", 
-            sentAt: FieldValue.serverTimestamp(), 
-            messageSent: message,
-            usedTemplate: !!templateConfig,
-            parametersSent: templateConfig?.parameters.map(p => p.text)
+              status: "skipped_simulation", 
+              messagePreview: message 
           });
         } else {
-          summary.failed++;
-          await logRef.update({ status: "failed", error: result.error, usedTemplate: !!templateConfig });
+          let templateConfig: any = undefined;
+          if (settings.whatsappTemplateName) {
+             templateConfig = {
+               name: settings.whatsappTemplateName,
+               language: settings.whatsappTemplateLanguage || "pt_BR",
+               parameters: [
+                 { text: textVars.nome },
+                 { text: textVars.valor },
+                 { text: textVars.vencimento },
+                 { text: textVars.pix },
+                 { text: textVars.destinatario }
+               ]
+             };
+          }
+
+          const result = await sendWhatsAppMessage(client.phone, message, templateConfig);
+          if (result.ok) {
+            summary.sent++;
+            await logRef.update({ status: "sent", sentAt: FieldValue.serverTimestamp() });
+          } else {
+            summary.failed++;
+            await logRef.update({ status: "failed", error: result.error });
+          }
         }
+      } catch (innerError) {
+        console.error("Erro ao processar cliente:", doc.id, innerError);
+        summary.failed++;
       }
     }
 
@@ -276,16 +272,10 @@ export default async function handler(req: any, res: any) {
       finishedAt: FieldValue.serverTimestamp()
     });
 
-    return res.status(200).json({ success: true, batchId, summary, executionTime: executionHour });
+    return res.status(200).json({ success: true, batchId, summary });
 
   } catch (error: any) {
-    console.error("🔥 Erro fatal no billing bot:", error);
-    const db = getDb();
-    await db.collection('billing_execution_logs').add({
-        timestamp: FieldValue.serverTimestamp(),
-        status: 'error',
-        error: error.message
-    });
+    console.error("🔥 Erro fatal:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }

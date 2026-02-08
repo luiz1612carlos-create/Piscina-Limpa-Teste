@@ -1,7 +1,5 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { calculateClientMonthlyFee, calculateVolume, normalizeDimension, calculateDrivingDistance, formatAddressForGeocoding } from '../../utils/calculations';
-// FIX: Added NotificationType to the import from types
 import { AppContextType, Client, ClientProduct, PlanType, ClientStatus, PoolUsageStatus, PaymentStatus, Product, Address, Settings, Bank, FidelityPlan, Visit, StockProduct, NotificationType } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Button } from '../../components/Button';
@@ -152,10 +150,15 @@ const ClientsView: React.FC<ClientsViewProps> = ({ appContext }) => {
         if (!selectedClientForAnnouncement || !announcementMessage.trim()) return;
         setIsSendingAnnouncement(true);
         try {
-            const phoneId = selectedClientForAnnouncement.phone.replace(/\D/g, '');
-            const fullPhone = phoneId.startsWith('55') ? phoneId : `55${phoneId}`;
+            const rawPhone = selectedClientForAnnouncement.phone;
+            let phoneId = rawPhone.replace(/\D/g, '');
             
-            await sendAdminChatMessage(fullPhone, announcementMessage);
+            // Ajuste para números estrangeiros: Adiciona 55 apenas se for padrão BR (10 ou 11 dígitos) e não tiver "+" no início
+            if (!rawPhone.trim().startsWith("+") && (phoneId.length === 10 || phoneId.length === 11)) {
+                phoneId = "55" + phoneId;
+            }
+            
+            await sendAdminChatMessage(phoneId, announcementMessage);
             showNotification('Aviso enviado com sucesso via API oficial!', 'success');
             setIsAnnouncementModalOpen(false);
         } catch (error) {
@@ -169,7 +172,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ appContext }) => {
         if (!client.advancePaymentUntil) return false;
         const today = new Date();
         const advanceUntilDate = toDate(client.advancePaymentUntil);
-        return advanceUntilDate && (advanceUntilDate > today);
+        return advanceUntilDate !== null && (advanceUntilDate > today);
     };
 
     const handleCancelScheduledChange = async () => {
@@ -235,7 +238,6 @@ const ClientsView: React.FC<ClientsViewProps> = ({ appContext }) => {
                     stockProducts={stockProducts} 
                     banks={banks} 
                     settings={settings}
-                    // FIX: Pass showNotification to ClientEditModal
                     showNotification={showNotification}
                 />
             )}
@@ -264,15 +266,12 @@ interface ClientEditModalProps {
     stockProducts: StockProduct[]; 
     banks: Bank[]; 
     settings: Settings | null;
-    // FIX: Added showNotification to ClientEditModalProps
     showNotification: (message: string, type: NotificationType) => void;
 }
 
 const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
-    // FIX: Destructure showNotification from props
     const { client, isOpen, onClose, onSave, onDelete, onMarkPaid, onCancelScheduledChange, isSaving, isDeleting, stockProducts, banks, settings, showNotification } = props;
     
-    // Inicialização segura para garantir que objetos aninhados existam no formulário
     const initialData = useMemo(() => ({
         ...client,
         address: client.address || { street: '', number: '', neighborhood: '', city: '', state: '', zip: '' },
@@ -281,7 +280,6 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
     }), [client]);
 
     const [clientData, setClientData] = useState<ClientFormData>(initialData);
-    const [errors, setErrors] = useState<{ dueDate?: string; }>({});
     const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
 
     useEffect(() => { 
@@ -322,11 +320,6 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
         }
     };
     
-    const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, checked } = e.target;
-        setClientData(prev => ({ ...prev, [name]: checked }));
-    };
-
     const handleAutoCalculateDistance = async () => {
         if (!settings) return;
         setIsCalculatingDistance(true);
@@ -336,11 +329,9 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
             const km = await calculateDrivingDistance(originStr, destinationStr);
             if (km >= 0) { 
                 setClientData(prev => ({ ...prev, distanceFromHq: km })); 
-                // FIX: showNotification is now available from props
                 showNotification(`Distância calculada: ${km} km`, 'info');
             }
         } catch (error: any) { 
-            // FIX: showNotification is now available from props
             showNotification(error.message, 'error'); 
         } finally { 
             setIsCalculatingDistance(false); 
