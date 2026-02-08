@@ -1,4 +1,3 @@
-// FIX: Added React import to resolve 'Cannot find namespace React' errors
 import React, { useState, useEffect, useMemo } from 'react';
 import { AuthContextType, AppContextType, Client, ReplenishmentQuote, Order, Settings, CartItem, AdvancePaymentRequest, PoolEvent, RecessPeriod, PendingPriceChange, PlanChangeRequest, FidelityPlan, EmergencyRequest, AffectedClientPreview } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -41,7 +40,6 @@ const toDate = (timestamp: any): Date | null => {
 
 type DashboardTab = 'summary' | 'products' | 'plan' | 'account';
 
-// FIX: Added React namespace import to support React.FC and other React types
 const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, appContext }) => {
     const { user, changePassword, showNotification } = authContext;
     const { clients, loading, settings, routes, replenishmentQuotes, updateReplenishmentQuoteStatus, createOrder, createAdvancePaymentRequest, isAdvancePlanGloballyAvailable, advancePaymentRequests, banks, poolEvents, createPoolEvent, pendingPriceChanges, planChangeRequests, requestPlanChange, acceptPlanChange, cancelPlanChangeRequest, emergencyRequests, createEmergencyRequest } = appContext;
@@ -105,14 +103,14 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
     const isInRecess = !!activeRecess;
 
-    // Lógica aprimorada para verificar se o plano adiantado está ativo e calcular prazos de renovação
+    // Lógica de Renovação: Informar com 30 dias de antecedência (1 mês)
     const advancePlanInfo = useMemo(() => {
         if (!clientData?.advancePaymentUntil) return null;
         const today = new Date();
         const advanceUntil = toDate(clientData.advancePaymentUntil);
         
         if (advanceUntil && advanceUntil > today) {
-            // A cobertura real vai até um dia antes do próximo vencimento
+            // A cobertura real vai até o dia anterior ao próximo vencimento
             const coverageEnd = new Date(advanceUntil);
             coverageEnd.setDate(coverageEnd.getDate() - 1);
             
@@ -123,8 +121,9 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 active: true,
                 renewalDate: advanceUntil,
                 coverageEnd: coverageEnd,
-                isExpiringSoon: diffDays <= 2, // 2 dias antes: Aviso na conta
-                showRenewalButton: diffDays <= 1 // 1 dia antes: Botão na dashboard
+                // O sistema avisa e permite renovar com 30 dias de antecedência (mês final de competência)
+                isExpiringSoon: diffDays <= 30,
+                showRenewalButton: diffDays <= 30
             };
         }
         return null;
@@ -163,7 +162,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         if (!mostRecentRequest) return false;
         if (mostRecentRequest.status === 'pending') return true;
         const updatedAt = toDate(mostRecentRequest.updatedAt);
-        if (!updatedAt) return mostRecentRequest.status !== 'approved'; // Se aprovado e sem updatedAt ainda, esconde (para evitar loading infinito)
+        if (!updatedAt) return mostRecentRequest.status !== 'approved';
         const threeDaysAgo = new Date();
         threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
         return updatedAt > threeDaysAgo;
@@ -223,7 +222,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         }
     }, [isPlanUpgradeModalOpen, upgradeOptions, selectedUpgradeOptionId]);
 
-    // FIX: Using React namespace for FormEvent
     const handlePasswordChange = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newPassword !== confirmPassword) {
@@ -378,15 +376,15 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 {activeTab === 'summary' && (
                     <div className="space-y-6 animate-fade-in text-gray-800 dark:text-gray-100">
                         <div className="space-y-4">
-                            {/* Transparência: Badge de Plano Adiantado Ativo com datas claras */}
+                            {/* Badge de Plano Adiantado Ativo */}
                             {advancePlanInfo?.active && (
                                 <div className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white p-4 rounded-xl shadow-lg border border-yellow-400 flex items-center gap-3 animate-fade-in">
                                     <SparklesIcon className="w-8 h-8 flex-shrink-0" />
                                     <div>
-                                        <p className="font-black text-sm uppercase tracking-wider">Plano Adiantado Ativo</p>
+                                        <p className="font-black text-sm uppercase tracking-wider">Status do Plano: Adiantado</p>
                                         <div className="space-y-0.5">
-                                            <p className="text-xs opacity-95">Manutenção coberta até: <strong>{advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}</strong></p>
-                                            <p className="text-[10px] bg-white/20 px-2 py-0.5 rounded inline-block font-bold">Próximo vencimento/renovação: {advancePlanInfo.renewalDate.toLocaleDateString('pt-BR')}</p>
+                                            <p className="text-xs opacity-95">Sua piscina está quitada até: <strong>{advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}</strong></p>
+                                            <p className="text-[10px] bg-white/20 px-2 py-0.5 rounded inline-block font-bold">Próxima Renovação em: {advancePlanInfo.renewalDate.toLocaleDateString('pt-BR')}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -455,18 +453,19 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                 </Card>
                             )}
 
-                            {isAdvancePlanGloballyAvailable && !isBlockedByDueDate && (!advancePlanInfo?.active || (advancePlanInfo?.active && advancePlanInfo.showRenewalButton)) && (
+                            {/* Banner de Renovação Antecipada ou Adesão ao Adiantamento */}
+                            {isAdvancePlanGloballyAvailable && !isBlockedByDueDate && (!advancePlanInfo?.active || advancePlanInfo.showRenewalButton) && (
                                 <div className="bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl p-6 shadow-lg animate-fade-in">
                                     <h3 className="text-xl font-black mb-1">
-                                        {advancePlanInfo?.active ? "🕒 Hora de Renovar!" : settings.features.advancePaymentTitle}
+                                        {advancePlanInfo?.active ? "🕒 Renovação do Adiantamento" : settings.features.advancePaymentTitle}
                                     </h3>
                                     <p className="text-sm opacity-90 mb-4">
                                         {advancePlanInfo?.active 
-                                            ? "Sua cobertura acaba amanhã. Renove agora para garantir os descontos no próximo lote!" 
+                                            ? `Sua cobertura atual encerra em ${advancePlanInfo.renewalDate.toLocaleDateString('pt-BR')}. Renove agora para garantir o desconto no próximo ciclo de meses!` 
                                             : (clientData.plan === 'VIP' ? settings.features.advancePaymentSubtitleVIP : settings.features.advancePaymentSubtitleSimple)}
                                     </p>
                                     <Button variant="light" size="sm" onClick={() => setIsAdvanceModalOpen(true)}>
-                                        {advancePlanInfo?.active ? 'Renovar Adiantamento' : 'Ver Descontos'}
+                                        {advancePlanInfo?.active ? 'Solicitar Próximo Ciclo' : 'Ver Descontos'}
                                     </Button>
                                 </div>
                             )}
@@ -518,7 +517,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                         </div>
                                         <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-900 dark:text-purple-100">
                                             <p className="text-xs text-gray-500">Alcalinidade</p>
-                                            <p className="text-2xl font-black text-purple-600 dark:text-purple-400">{clientData.poolStatus.alcalinidade}</p>
+                                            <p className="text-2xl font-black text-purple-600 dark:text-blue-400">{clientData.poolStatus.alcalinidade}</p>
                                         </div>
                                         <div className={`p-3 rounded-lg ${clientData.poolStatus.uso === 'Livre para uso' ? 'bg-green-50 dark:bg-green-900/20' : 'bg-red-50 dark:bg-green-900/20'}`}>
                                             <p className="text-xs text-gray-500">Uso</p>
@@ -574,7 +573,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                                     <SparklesIcon className="w-4 h-4 text-yellow-600" />
                                                     <span className="text-[10px] font-bold text-yellow-700 dark:text-yellow-400 uppercase">PLANO ADIANTADO ATIVO</span>
                                                 </div>
-                                                <p className="text-[9px] text-yellow-600 dark:text-yellow-500 italic">O serviço está garantido até {advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}.</p>
+                                                <p className="text-[9px] text-yellow-600 dark:text-yellow-500 italic">Quitado e coberto até {advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}.</p>
                                             </div>
                                         )}
 
@@ -636,7 +635,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <h4 className={`text-3xl font-black ${currentPlanDetails.planType === 'VIP' ? 'text-yellow-600 dark:text-yellow-400' : 'text-primary-600 dark:text-primary-400'}`}>{currentPlanDetails.title}</h4>
-                                        {advancePlanInfo?.active && <span className="bg-yellow-100 text-yellow-700 text-[10px] px-2 py-0.5 rounded font-black uppercase">PROMO ATIVA</span>}
+                                        {advancePlanInfo?.active && <span className="bg-yellow-100 text-yellow-700 text-[10px] px-2 py-0.5 rounded font-black uppercase">PLANO PROMOCIONAL ATIVO</span>}
                                     </div>
                                     {currentPlanDetails.fidelity && (
                                         <p className="text-sm font-bold text-gray-500">Fidelidade: {currentPlanDetails.fidelity.months} meses ({currentPlanDetails.fidelity.discountPercent}% OFF)</p>
@@ -691,19 +690,20 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                                 <div className="flex items-center gap-3">
                                                     <SparklesIcon className="w-6 h-6 text-yellow-600" />
                                                     <div>
-                                                        <p className="text-[10px] text-yellow-700 dark:text-yellow-400 uppercase font-black">Plano Promocional Ativo</p>
+                                                        <p className="text-[10px] text-yellow-700 dark:text-yellow-400 uppercase font-black">Ciclo Promocional Ativo</p>
                                                         <p className="text-sm font-bold text-yellow-800 dark:text-yellow-100">
-                                                            Sua manutenção já está quitada e coberta até o dia {advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}.
+                                                            Sua manutenção está coberta e quitada até o dia {advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}.
                                                         </p>
                                                     </div>
                                                 </div>
-                                                {advancePlanInfo.isExpiringSoon ? (
+                                                {advancePlanInfo.isExpiringSoon && (
                                                     <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-[11px] text-red-900 dark:text-red-200 border border-red-200/50 animate-pulse">
-                                                        <strong>⚠️ RENOVAÇÃO PENDENTE:</strong> Sua cobertura termina em breve. Amanhã, o botão de renovação estará disponível na aba <strong>Início</strong> para garantir o valor promocional do próximo ciclo.
+                                                        <strong>⚠️ RENOVAÇÃO DISPONÍVEL:</strong> Você está no mês final do seu ciclo adiantado. Solicite a renovação na aba <strong>Início</strong> para garantir a continuidade dos descontos nos próximos meses!
                                                     </div>
-                                                ) : (
+                                                )}
+                                                {!advancePlanInfo.isExpiringSoon && (
                                                     <div className="p-3 bg-white/40 dark:bg-black/20 rounded-lg text-[11px] text-yellow-900 dark:text-yellow-200 border border-yellow-200/50">
-                                                        <strong>💡 Dica de Economia:</strong> Para renovar seu desconto e garantir o valor promocional, você deve solicitar um novo adiantamento na aba <strong>Início</strong> no dia anterior ao vencimento ({advancePlanInfo.coverageEnd.toLocaleDateString('pt-BR')}).
+                                                        <strong>💡 Dica:</strong> A renovação automática com desconto ficará disponível para solicitação na aba <strong>Início</strong> a partir de 30 dias antes do vencimento atual ({advancePlanInfo.renewalDate.toLocaleDateString('pt-BR')}).
                                                     </div>
                                                 )}
                                             </div>
@@ -957,14 +957,15 @@ const AdvancePaymentModal = ({ isOpen, onClose, client, settings, monthlyFee, on
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Economize com Adiantamento">
             <div className="space-y-3 text-gray-800 dark:text-gray-100">
+                <p className="text-xs text-gray-500 mb-2">Ao contratar um novo ciclo agora, seu plano será renovado automaticamente a partir da data de vencimento atual ({toDate(client.payment.dueDate)?.toLocaleDateString('pt-BR')}).</p>
                 {settings.advancePaymentOptions.map((opt: any, i: number) => (
                     <div key={i} onClick={() => setSelectedIdx(i)} className={`p-4 border-2 rounded-xl cursor-pointer flex justify-between items-center transition-all ${selectedIdx === i ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-md' : 'border-gray-100 dark:border-gray-800'}`}>
                         <div><p className="font-black">{opt.months} Meses</p><p className="text-xs text-green-600 font-bold">{opt.discountPercent}% de desconto real</p></div>
                         <div className="text-right"><p className="text-xl font-black text-primary-600 dark:text-primary-400">R$ {(monthlyFee * opt.months * (1 - opt.discountPercent/100)).toFixed(2)}</p><p className="text-[10px] text-gray-400">Total do pacote</p></div>
                     </div>
                 ))}
-                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl text-xs text-gray-500 text-center"><p>Ao solicitar, as chaves PIX para pagamento serão apresentadas no painel após a análise.</p></div>
-                <Button className="w-full mt-4" size="lg" onClick={handleSubmit} isLoading={isSaving} disabled={selectedIdx === null}>Enviar Solicitação</Button>
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-xl text-xs text-gray-500 text-center"><p>As chaves PIX para pagamento do novo ciclo serão apresentadas no painel após a aprovação.</p></div>
+                <Button className="w-full mt-4" size="lg" onClick={handleSubmit} isLoading={isSaving} disabled={selectedIdx === null}>Enviar Solicitação de Renovação</Button>
             </div>
         </Modal>
     );
