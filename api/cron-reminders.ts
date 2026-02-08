@@ -136,23 +136,23 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ success: true, message: "Robô desativado nas configurações." });
     }
 
-    // Ajuste de fuso horário BR
     const brNowStr = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
     const brDate = new Date(brNowStr);
     const executionHour = brDate.toLocaleTimeString('pt-BR');
     
     const batchId = `batch_${Date.now()}`;
     
-    const targetDate = new Date(brDate);
-    targetDate.setDate(targetDate.getDate() + (Number(billingBot.daysBeforeDue) || 0));
-    const targetDateStr = getPureDateString(targetDate);
+    // Datas Alvo
+    const todayStr = getPureDateString(brDate);
+    const reminderDate = new Date(brDate);
+    reminderDate.setDate(reminderDate.getDate() + (Number(billingBot.daysBeforeDue) || 0));
+    const reminderDateStr = getPureDateString(reminderDate);
 
     const summaryRef = await db.collection('billing_execution_logs').add({
       batchId,
       timestamp: FieldValue.serverTimestamp(),
       executionHourBR: executionHour,
       mode: billingBot.dryRun ? 'dry-run' : 'live',
-      targetDate: targetDateStr,
       status: 'running',
       sent: 0, ignored: 0, failed: 0, processed: 0
     });
@@ -170,7 +170,30 @@ export default async function handler(req: any, res: any) {
         const clientDueDate = toSafeDate(client.payment?.dueDate);
         const clientDueDateStr = getPureDateString(clientDueDate);
         summary.processed++;
-        
+
+        // Define o tipo de mensagem com base na data
+        let reminderType: 'ANTECIPADO' | 'VENCIMENTO' | null = null;
+        if (clientDueDateStr === reminderDateStr) reminderType = 'ANTECIPADO';
+        else if (clientDueDateStr === todayStr) reminderType = 'VENCIMENTO';
+
+        if (!reminderType) {
+          summary.ignored++;
+          continue;
+        }
+
+        // --- VERIFICAÇÃO DE DUPLICIDADE (TRAVA) ---
+        const alreadySent = await db.collection('billing_messages')
+          .where('customerId', '==', doc.id)
+          .where('clientDueDate', '==', clientDueDateStr)
+          .where('reminderType', '==', reminderType)
+          .where('status', 'in', ['sent', 'skipped_simulation'])
+          .get();
+
+        if (!alreadySent.empty) {
+          summary.ignored++;
+          continue;
+        }
+
         const valorCalculado = calculateFee(client, settings.pricing);
         const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         
@@ -189,30 +212,15 @@ export default async function handler(req: any, res: any) {
           phone: client.phone || "",
           mode: mode,
           status: "analyzing",
-          targetDate: targetDateStr,
+          reminderType: reminderType,
           clientDueDate: clientDueDateStr,
           calculatedValue: valorCalculado,
           createdAt: FieldValue.serverTimestamp()
         });
 
-        if (clientDueDateStr !== targetDateStr) {
-          summary.ignored++;
-          await logRef.update({ 
-              status: "ignored_date", 
-              reason: `Data ${clientDueDateStr} não coincide com o alvo ${targetDateStr}` 
-          });
-          continue;
-        }
-
-        if (!client.phone) {
+        if (!client.phone || valorCalculado <= 0) {
           summary.failed++;
-          await logRef.update({ status: "failed", reason: "Telefone ausente" });
-          continue;
-        }
-
-        if (valorCalculado <= 0) {
-          summary.failed++;
-          await logRef.update({ status: "failed", reason: "Valor R$ 0,00" });
+          await logRef.update({ status: "failed", reason: !client.phone ? "Telefone ausente" : "Valor R$ 0,00" });
           continue;
         }
 
@@ -231,10 +239,7 @@ export default async function handler(req: any, res: any) {
 
         if (billingBot.dryRun) {
           summary.sent++;
-          await logRef.update({ 
-              status: "skipped_simulation", 
-              messagePreview: message 
-          });
+          await logRef.update({ status: "skipped_simulation", messagePreview: message });
         } else {
           let templateConfig: any = undefined;
           if (settings.whatsappTemplateName) {
