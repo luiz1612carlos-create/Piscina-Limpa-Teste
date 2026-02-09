@@ -1,4 +1,4 @@
-import { getDb } from "./firebase/admin.js";
+import { getDb } from "./firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 
 function calculateFee(client: any, pricing: any) {
@@ -108,14 +108,11 @@ async function sendWhatsAppMessage(to: string, text: string, templateConfig?: { 
   try {
     const response = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: "POST",
-      headers: { 
-        "Authorization": `Bearer ${token}`, 
-        "Content-Type": "application/json" 
-      },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     
-    const resData: any = await response.json();
+    const resData = await response.json();
     if (!response.ok) {
         return { ok: false, error: JSON.stringify(resData) };
     }
@@ -139,14 +136,13 @@ export default async function handler(req: any, res: any) {
     const brNowStr = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
     const brDate = new Date(brNowStr);
     const executionHour = brDate.toLocaleTimeString('pt-BR');
-    
     const batchId = `batch_${Date.now()}`;
     
     // Datas Alvo
     const todayStr = getPureDateString(brDate);
-    const reminderDate = new Date(brDate);
-    reminderDate.setDate(reminderDate.getDate() + (Number(billingBot.daysBeforeDue) || 0));
-    const reminderDateStr = getPureDateString(reminderDate);
+    const advanceTargetDate = new Date(brDate);
+    advanceTargetDate.setDate(advanceTargetDate.getDate() + (Number(billingBot.daysBeforeDue) || 0));
+    const advanceTargetDateStr = getPureDateString(advanceTargetDate);
 
     const summaryRef = await db.collection('billing_execution_logs').add({
       batchId,
@@ -165,122 +161,114 @@ export default async function handler(req: any, res: any) {
     const mode = billingBot.dryRun ? 'dry-run' : 'live';
 
     for (const doc of clientsSnap.docs) {
-      try {
-        const client = doc.data();
-        const clientDueDate = toSafeDate(client.payment?.dueDate);
-        const clientDueDateStr = getPureDateString(clientDueDate);
-        summary.processed++;
+      const client = doc.data();
+      const clientDueDate = toSafeDate(client.payment?.dueDate);
+      const clientDueDateStr = getPureDateString(clientDueDate);
+      summary.processed++;
+      
+      // Determina o tipo de lembrete
+      let reminderType: 'advance' | 'due_day' | null = null;
+      if (clientDueDateStr === advanceTargetDateStr) reminderType = 'advance';
+      else if (clientDueDateStr === todayStr) reminderType = 'due_day';
 
-        // Define o tipo de mensagem com base na data
-        let reminderType: 'ANTECIPADO' | 'VENCIMENTO' | null = null;
-        if (clientDueDateStr === reminderDateStr) reminderType = 'ANTECIPADO';
-        else if (clientDueDateStr === todayStr) reminderType = 'VENCIMENTO';
+      if (!reminderType) {
+        summary.ignored++;
+        continue;
+      }
 
-        if (!reminderType) {
-          summary.ignored++;
-          continue;
-        }
+      // TRAVA DE SEGURANÇA: Verificar se já foi enviado para este cliente, nesta data e neste tipo
+      const alreadySentSnap = await db.collection('billing_messages')
+        .where('customerId', '==', doc.id)
+        .where('clientDueDate', '==', clientDueDateStr)
+        .where('reminderType', '==', reminderType)
+        .where('status', 'in', ['sent', 'skipped_simulation'])
+        .limit(1)
+        .get();
 
-        // --- VERIFICAÇÃO DE DUPLICIDADE (TRAVA) ---
-        const alreadySent = await db.collection('billing_messages')
-          .where('customerId', '==', doc.id)
-          .where('clientDueDate', '==', clientDueDateStr)
-          .where('reminderType', '==', reminderType)
-          .where('status', 'in', ['sent', 'skipped_simulation'])
-          .get();
+      if (!alreadySentSnap.empty) {
+        summary.ignored++;
+        continue;
+      }
 
-        if (!alreadySent.empty) {
-          summary.ignored++;
-          continue;
-        }
+      const valorCalculado = calculateFee(client, settings.pricing);
+      const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      
+      let vencimentoCurto = "---";
+      if (clientDueDate) {
+          const dia = String(clientDueDate.getUTCDate()).padStart(2, '0');
+          const mes = String(clientDueDate.getUTCMonth() + 1).padStart(2, '0');
+          vencimentoCurto = `${dia}/${mes}`;
+      }
 
-        const valorCalculado = calculateFee(client, settings.pricing);
-        const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        
-        let vencimentoCurto = "---";
-        if (clientDueDate) {
-            const dia = String(clientDueDate.getUTCDate()).padStart(2, '0');
-            const mes = String(clientDueDate.getUTCMonth() + 1).padStart(2, '0');
-            vencimentoCurto = `${dia}/${mes}`;
-        }
+      const logRef = await db.collection('billing_messages').add({
+        bot: "billingBot",
+        batchId: batchId,
+        customerId: doc.id,
+        customerName: client.name || "N/A",
+        phone: client.phone || "",
+        mode: mode,
+        status: "analyzing",
+        reminderType: reminderType,
+        clientDueDate: clientDueDateStr,
+        calculatedValue: valorCalculado,
+        createdAt: FieldValue.serverTimestamp()
+      });
 
-        const logRef = await db.collection('billing_messages').add({
-          bot: "billingBot",
-          batchId: batchId,
-          customerId: doc.id,
-          customerName: client.name || "N/A",
-          phone: client.phone || "",
-          mode: mode,
-          status: "analyzing",
-          reminderType: reminderType,
-          clientDueDate: clientDueDateStr,
-          calculatedValue: valorCalculado,
-          createdAt: FieldValue.serverTimestamp()
-        });
-
-        if (!client.phone || valorCalculado <= 0) {
-          summary.failed++;
-          await logRef.update({ status: "failed", reason: !client.phone ? "Telefone ausente" : "Valor R$ 0,00" });
-          continue;
-        }
-
-        const textVars = {
-          nome: String(client.name || "Cliente"),
-          nome_cliente: String(client.name || "Cliente"),
-          valor: String(valorFormatado),
-          vencimento: vencimentoCurto,
-          data_vencimento: clientDueDate ? clientDueDate.toLocaleDateString('pt-BR') : vencimentoCurto,
-          status: client?.payment?.status || 'Pendente',
-          pix: String(client.pixKey || settings.pixKey || "Não informada"),
-          destinatario: String(client.recipientName || settings.pixKeyRecipient || settings.companyName || "SOS Piscina")
-        };
-
-        const message = replaceVars(billingBot.messageTemplate || "", textVars);
-
-        if (billingBot.dryRun) {
-          summary.sent++;
-          await logRef.update({ status: "skipped_simulation", messagePreview: message });
-        } else {
-          let templateConfig: any = undefined;
-          if (settings.whatsappTemplateName) {
-             templateConfig = {
-               name: settings.whatsappTemplateName,
-               language: settings.whatsappTemplateLanguage || "pt_BR",
-               parameters: [
-                 { text: textVars.nome },
-                 { text: textVars.valor },
-                 { text: textVars.vencimento },
-                 { text: textVars.pix },
-                 { text: textVars.destinatario }
-               ]
-             };
-          }
-
-          const result = await sendWhatsAppMessage(client.phone, message, templateConfig);
-          if (result.ok) {
-            summary.sent++;
-            await logRef.update({ status: "sent", sentAt: FieldValue.serverTimestamp() });
-          } else {
-            summary.failed++;
-            await logRef.update({ status: "failed", error: result.error });
-          }
-        }
-      } catch (innerError) {
-        console.error("Erro ao processar cliente:", doc.id, innerError);
+      if (!client.phone || valorCalculado <= 0) {
         summary.failed++;
+        await logRef.update({ status: "failed", reason: !client.phone ? "Telefone ausente" : "Valor R$ 0" });
+        continue;
+      }
+
+      const textVars = {
+        nome: String(client.name || "Cliente"),
+        valor: String(valorFormatado),
+        vencimento: vencimentoCurto,
+        pix: String(client.pixKey || settings.pixKey || "Não informada"),
+        destinatario: String(client.recipientName || settings.pixKeyRecipient || settings.companyName || "SOS Piscina"),
+        CLIENTE: String(client.name || "Cliente"),
+        VALOR: String(valorFormatado),
+        VENCIMENTO_CURTO: vencimentoCurto
+      };
+
+      const message = replaceVars(billingBot.messageTemplate || "", textVars);
+
+      if (billingBot.dryRun) {
+        summary.sent++;
+        await logRef.update({ status: "skipped_simulation", messagePreview: message });
+      } else {
+        let templateConfig = undefined;
+        if (settings.whatsappTemplateName) {
+           templateConfig = {
+             name: settings.whatsappTemplateName,
+             language: settings.whatsappTemplateLanguage || "pt_BR",
+             parameters: [
+                { type: "text", text: textVars.nome },
+                { type: "text", text: textVars.valor },
+                { type: "text", text: textVars.vencimento },
+                { type: "text", text: textVars.pix },
+                { type: "text", text: textVars.destinatario }
+             ]
+           };
+        }
+
+        const result = await sendWhatsAppMessage(client.phone, message, templateConfig);
+        
+        if (result.ok) {
+          summary.sent++;
+          await logRef.update({ status: "sent", sentAt: FieldValue.serverTimestamp() });
+        } else {
+          summary.failed++;
+          await logRef.update({ status: "failed", error: result.error });
+        }
       }
     }
 
-    await summaryRef.update({
-      ...summary,
-      status: 'completed',
-      finishedAt: FieldValue.serverTimestamp()
-    });
-
-    return res.status(200).json({ success: true, batchId, summary });
+    await summaryRef.update({ ...summary, status: 'completed', finishedAt: FieldValue.serverTimestamp() });
+    return res.status(200).json({ success: true, summary });
 
   } catch (error: any) {
-    console.error("🔥 Erro fatal:", error);
+    console.error("🔥 Erro fatal no billing bot:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
