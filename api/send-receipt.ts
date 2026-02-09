@@ -1,4 +1,4 @@
-import { getDb } from "./firebase/admin";
+import { getDb } from "./firebase/admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
 export default async function handler(req: any, res: any) {

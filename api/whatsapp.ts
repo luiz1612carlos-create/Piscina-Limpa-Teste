@@ -1,4 +1,4 @@
-import { getDb } from "./firebase/admin";
+import { getDb } from "./firebase/admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
 function calculateFee(client: any, pricing: any) {
