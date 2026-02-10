@@ -228,7 +228,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     }, [settings, advancePlanUsage]);
 
     const updateSettings = useCallback(async (newSettings: Partial<Settings>, logoFile?: File, removeLogo?: boolean, onProgress?: (progress: number) => void) => {
-        // Limpar dados antes de enviar
         const finalData = sanitizeData({ ...newSettings });
 
         if (removeLogo) {
@@ -293,7 +292,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         if (!budgetDoc.exists) throw new Error("Orçamento não encontrado.");
         const budget = budgetDoc.data() as BudgetQuote;
         
-        // 🚀 CORREÇÃO: Usando o config do window diretamente aqui
         const config = (window as any).firebaseConfig;
         const secondaryApp = firebase.initializeApp(config, `AppApproval_${Date.now()}`);
         
@@ -320,16 +318,21 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
 
     const rejectBudgetQuote = useCallback(async (id: string) => { await db.collection('pre-budgets').doc(id).delete(); }, []);
     
+    // 🚀 AJUSTE DA CAJADADA ÚNICA: markAsPaid agora salva como 'Pendente'
     const markAsPaid = useCallback(async (client: Client, months: number, total: number) => {
         if (!client.bankId) throw new Error("Associe um banco.");
         const batch = db.batch();
         batch.set(db.collection('transactions').doc(), { clientId: client.id, clientName: client.name, bankId: client.bankId, amount: total, date: firebase.firestore.FieldValue.serverTimestamp() });
         const next = new Date(client.payment.dueDate);
         next.setMonth(next.getMonth() + months);
-        batch.update(db.collection('clients').doc(client.id), { 'payment.dueDate': next.toISOString(), 'payment.status': 'Pago' });
+        
+        // AQUI: trocamos 'Pago' por 'Pendente' para o robô e o relatório de 5 dias funcionarem pela data
+        batch.update(db.collection('clients').doc(client.id), { 
+            'payment.dueDate': next.toISOString(), 
+            'payment.status': 'Pendente' 
+        });
         await batch.commit();
 
-        // Recibo Automático
         try {
             const bank = banks.find(b => b.id === client.bankId);
             fetch('/api/send-receipt', {
@@ -397,12 +400,12 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
     const triggerReplenishmentAnalysis = useCallback(async () => 0, []);
     const createAdvancePaymentRequest = useCallback(async (r: any) => { await db.collection('advancePaymentRequests').add({ ...r, status: 'pending', createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }, []);
     
+    // 🚀 AJUSTE DA CAJADADA ÚNICA: approveAdvancePaymentRequest agora salva como 'Pendente'
     const approveAdvancePaymentRequest = useCallback(async (id: string) => {
         const reqDoc = await db.collection('advancePaymentRequests').doc(id).get();
         if (!reqDoc.exists) throw new Error("Solicitação não encontrada.");
         const request = reqDoc.data() as AdvancePaymentRequest;
 
-        // Busca resiliente (tenta por UID do campo ou ID do documento do cliente)
         let clientDocRef = null;
         let clientData = null;
 
@@ -412,7 +415,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
             clientDocRef = clientByUidQuery.docs[0].ref;
             clientData = clientByUidQuery.docs[0].data() as Client;
         } else {
-            // Tenta por Document ID direto (caso tenha sido salvo assim)
             const clientByIdDoc = await db.collection('clients').doc(request.clientId).get();
             if (clientByIdDoc.exists) {
                 clientDocRef = clientByIdDoc.ref;
@@ -424,27 +426,24 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
         
         const batch = db.batch();
         
-        // 1. Atualizar Solicitação (força status approved para sumir do painel)
         batch.update(db.collection('advancePaymentRequests').doc(id), { 
             status: 'approved', 
             updatedAt: firebase.firestore.FieldValue.serverTimestamp() 
         });
 
-        // 2. Cálculo da Nova Data de Vencimento com Fallback
         let currentDueDate = toDate(clientData.payment?.dueDate);
-        if (!currentDueDate) currentDueDate = new Date(); // Se não tiver data, começa de hoje
+        if (!currentDueDate) currentDueDate = new Date();
         
         const nextDate = new Date(currentDueDate);
         nextDate.setMonth(nextDate.getMonth() + request.months);
 
-        // 3. Atualizar Registro do Cliente
+        // AQUI: Mudança para 'Pendente' para garantir o fluxo de relatórios e robô
         batch.update(clientDocRef, {
-            'payment.status': 'Pago',
+            'payment.status': 'Pendente',
             'payment.dueDate': nextDate.toISOString(),
             'advancePaymentUntil': firebase.firestore.Timestamp.fromDate(nextDate)
         });
 
-        // 4. Registrar Transação Financeira
         const bank = banks.find(b => b.id === clientData!.bankId);
         batch.set(db.collection('transactions').doc(), {
             clientId: clientDocRef.id,
@@ -457,7 +456,6 @@ export const useAppData = (user: any | null, userData: UserData | null): AppData
 
         await batch.commit();
 
-        // Disparo de Recibo Automático
         try {
             fetch('/api/send-receipt', {
                 method: 'POST',

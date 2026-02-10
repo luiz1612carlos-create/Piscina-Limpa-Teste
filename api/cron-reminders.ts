@@ -1,7 +1,7 @@
 import { getDb } from "./firebase/admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
-// --- 1. FUNÇÕES AUXILIARES (Devem estar fora do export default) ---
+// --- 1. FUNÇÕES AUXILIARES ---
 
 function calculateFee(client: any, pricing: any) {
   if (!client.poolVolume || !pricing || !pricing.volumeTiers) return 0;
@@ -114,7 +114,7 @@ async function sendWhatsAppMessage(to: string, text: string, templateConfig?: { 
   }
 }
 
-// --- 2. FUNÇÃO PRINCIPAL (Exportada para o Vercel) ---
+// --- 2. FUNÇÃO PRINCIPAL ---
 
 export default async function handler(req: any, res: any) {
   try {
@@ -127,10 +127,13 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ success: true, message: "Robô desativado." });
     }
 
+    // Configuração de Datas (Fuso SP)
     const brNowStr = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
     const brDate = new Date(brNowStr);
     const todayStr = getPureDateString(brDate);
+    const executionHour = brDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     
+    // Data alvo para o lembrete de antecedência (ex: 3 dias antes)
     const advanceTargetDate = new Date(brDate);
     advanceTargetDate.setDate(advanceTargetDate.getDate() + (Number(billingBot.daysBeforeDue) || 0));
     const advanceTargetDateStr = getPureDateString(advanceTargetDate);
@@ -139,32 +142,41 @@ export default async function handler(req: any, res: any) {
     const summaryRef = await db.collection('billing_execution_logs').add({
       batchId,
       timestamp: FieldValue.serverTimestamp(),
+      executionHourBR: executionHour,
       mode: billingBot.dryRun ? 'dry-run' : 'live',
       status: 'running',
       sent: 0, ignored: 0, failed: 0, processed: 0
     });
 
-    const clientsSnap = await db.collection('clients')
-      .where('payment.status', 'in', ['Pendente', 'Atrasado'])
-      .get();
+    // 🚀 O AJUSTE DE OURO: Filtramos apenas por clientes Ativos.
+    // Não filtramos mais por status 'Pendente', pois agora todos ficam pendentes após o pagamento.
+    const clientsSnap = await db.collection('clients').where('clientStatus', '==', 'Ativo').get();
 
     const summary = { sent: 0, ignored: 0, failed: 0, processed: 0 };
+    const mode = billingBot.dryRun ? 'dry-run' : 'live';
 
     for (const doc of clientsSnap.docs) {
-      const client = doc.data();
+      const client = { id: doc.id, ...doc.data() as any };
       const clientDueDate = toSafeDate(client.payment?.dueDate);
       const clientDueDateStr = getPureDateString(clientDueDate);
       summary.processed++;
       
       let reminderType: 'advance' | 'due_day' | null = null;
-      if (clientDueDateStr === advanceTargetDateStr) reminderType = 'advance';
-      else if (clientDueDateStr === todayStr) reminderType = 'due_day';
 
+      // Lógica Baseada em Data:
+      if (clientDueDateStr === advanceTargetDateStr) {
+        reminderType = 'advance';
+      } else if (clientDueDateStr === todayStr) {
+        reminderType = 'due_day';
+      }
+
+      // Se a data do cliente não for "Alvo" (hoje ou X dias antes), ignoramos
       if (!reminderType) {
         summary.ignored++;
         continue;
       }
 
+      // Evita duplicidade: Não envia se já processamos essa mensagem hoje para esse cliente
       const messageKey = `${doc.id}_${reminderType}_${todayStr}`;
       const alreadySentSnap = await db.collection('billing_messages')
         .where('messageKey', '==', messageKey)
@@ -186,16 +198,20 @@ export default async function handler(req: any, res: any) {
 
       const logRef = await db.collection('billing_messages').add({
         messageKey,
+        batchId,
         customerId: doc.id,
         customerName: client.name || "N/A",
         status: "processing", 
+        mode: mode,
         reminderType,
+        calculatedValue: valorCalculado,
+        dueDateFound: clientDueDateStr,
         createdAt: FieldValue.serverTimestamp()
       });
 
       if (!client.phone || valorCalculado <= 0) {
         summary.failed++;
-        await logRef.update({ status: "failed", reason: "Dados inválidos" });
+        await logRef.update({ status: "failed", reason: !client.phone ? "Sem telefone" : "Valor zero" });
         continue;
       }
 
@@ -204,7 +220,10 @@ export default async function handler(req: any, res: any) {
         valor: valorFormatado,
         vencimento: vencimentoCurto,
         pix: client.pixKey || settings.pixKey || "Não informada",
-        destinatario: client.recipientName || settings.companyName || "SOS Piscina"
+        destinatario: client.recipientName || settings.companyName || "SOS Piscina",
+        CLIENTE: client.name || "Cliente",
+        VALOR: valorFormatado,
+        VENCIMENTO_CURTO: vencimentoCurto
       };
 
       const message = replaceVars(billingBot.messageTemplate || "", textVars);
@@ -216,7 +235,13 @@ export default async function handler(req: any, res: any) {
         const templateConfig = settings.whatsappTemplateName ? {
           name: settings.whatsappTemplateName,
           language: settings.whatsappTemplateLanguage || "pt_BR",
-          parameters: Object.values(textVars).map(v => ({ text: v }))
+          parameters: [
+            { text: textVars.nome },
+            { text: textVars.valor },
+            { text: textVars.vencimento },
+            { text: textVars.pix },
+            { text: textVars.destinatario }
+          ]
         } : undefined;
 
         const result = await sendWhatsAppMessage(client.phone, message, templateConfig);
@@ -235,6 +260,7 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ success: true, summary });
 
   } catch (error: any) {
+    console.error("Erro no billing bot:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
