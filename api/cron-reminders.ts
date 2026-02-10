@@ -1,13 +1,13 @@
 import { getDb } from "./firebase/admin.js";
 import { FieldValue } from "firebase-admin/firestore";
 
+// --- 1. FUNÇÕES AUXILIARES (Devem estar fora do export default) ---
+
 function calculateFee(client: any, pricing: any) {
   if (!client.poolVolume || !pricing || !pricing.volumeTiers) return 0;
-  
   let basePrice = 0;
   const vol = Number(client.poolVolume);
   const tiers = pricing.volumeTiers;
-  
   const tier = tiers.find((t: any) => vol >= t.min && vol <= t.max);
   if (tier) {
     basePrice = Number(tier.price);
@@ -16,23 +16,19 @@ function calculateFee(client: any, pricing: any) {
     if (vol > sorted[0].max) basePrice = Number(sorted[0].price);
     else basePrice = Number(tiers[0].price);
   }
-
   let total = basePrice;
   if (client.hasWellWater) total += Number(pricing.wellWaterFee || 0);
   if (client.includeProducts) total += Number(pricing.productsFee || 0);
   if (client.isPartyPool) total += Number(pricing.partyPoolFee || 0);
-
   if (client.distanceFromHq && pricing.perKm) {
     const radius = Number(pricing.serviceRadius || 0);
     const distExtra = Math.max(0, Number(client.distanceFromHq) - radius);
     total += (distExtra * Number(pricing.perKm));
   }
-
   if (client.plan === 'VIP' && client.fidelityPlan) {
     const discount = total * (Number(client.fidelityPlan.discountPercent || 0) / 100);
     total -= discount;
   }
-
   return total;
 }
 
@@ -111,16 +107,14 @@ async function sendWhatsAppMessage(to: string, text: string, templateConfig?: { 
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    
     const resData = await response.json();
-    if (!response.ok) {
-        return { ok: false, error: JSON.stringify(resData) };
-    }
-    return { ok: true, data: resData };
+    return response.ok ? { ok: true, data: resData } : { ok: false, error: JSON.stringify(resData) };
   } catch (err: any) {
     return { ok: false, error: err.message };
   }
 }
+
+// --- 2. FUNÇÃO PRINCIPAL (Exportada para o Vercel) ---
 
 export default async function handler(req: any, res: any) {
   try {
@@ -130,24 +124,21 @@ export default async function handler(req: any, res: any) {
     const billingBot = settings.billingBot || { enabled: false, dryRun: true, daysBeforeDue: 3 };
 
     if (!billingBot.enabled && req.query.manual !== 'true') {
-      return res.status(200).json({ success: true, message: "Robô desativado nas configurações." });
+      return res.status(200).json({ success: true, message: "Robô desativado." });
     }
 
     const brNowStr = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
     const brDate = new Date(brNowStr);
-    const executionHour = brDate.toLocaleTimeString('pt-BR');
-    const batchId = `batch_${Date.now()}`;
-    
-    // Datas Alvo
     const todayStr = getPureDateString(brDate);
+    
     const advanceTargetDate = new Date(brDate);
     advanceTargetDate.setDate(advanceTargetDate.getDate() + (Number(billingBot.daysBeforeDue) || 0));
     const advanceTargetDateStr = getPureDateString(advanceTargetDate);
 
+    const batchId = `batch_${Date.now()}`;
     const summaryRef = await db.collection('billing_execution_logs').add({
       batchId,
       timestamp: FieldValue.serverTimestamp(),
-      executionHourBR: executionHour,
       mode: billingBot.dryRun ? 'dry-run' : 'live',
       status: 'running',
       sent: 0, ignored: 0, failed: 0, processed: 0
@@ -158,7 +149,6 @@ export default async function handler(req: any, res: any) {
       .get();
 
     const summary = { sent: 0, ignored: 0, failed: 0, processed: 0 };
-    const mode = billingBot.dryRun ? 'dry-run' : 'live';
 
     for (const doc of clientsSnap.docs) {
       const client = doc.data();
@@ -166,7 +156,6 @@ export default async function handler(req: any, res: any) {
       const clientDueDateStr = getPureDateString(clientDueDate);
       summary.processed++;
       
-      // Determina o tipo de lembrete
       let reminderType: 'advance' | 'due_day' | null = null;
       if (clientDueDateStr === advanceTargetDateStr) reminderType = 'advance';
       else if (clientDueDateStr === todayStr) reminderType = 'due_day';
@@ -176,59 +165,46 @@ export default async function handler(req: any, res: any) {
         continue;
       }
 
-      // TRAVA DE SEGURANÇA: Verificar se já foi enviado para este cliente, nesta data e neste tipo
+      const messageKey = `${doc.id}_${reminderType}_${todayStr}`;
       const alreadySentSnap = await db.collection('billing_messages')
-        .where('customerId', '==', doc.id)
-        .where('clientDueDate', '==', clientDueDateStr)
-        .where('reminderType', '==', reminderType)
-        .where('status', 'in', ['sent', 'skipped_simulation'])
-        .limit(1)
-        .get();
+        .where('messageKey', '==', messageKey)
+        .where('status', 'in', ['sent', 'skipped_simulation', 'processing']) 
+        .limit(1).get();
 
       if (!alreadySentSnap.empty) {
         summary.ignored++;
-        continue;
+        continue; 
       }
 
       const valorCalculado = calculateFee(client, settings.pricing);
-      const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const valorFormatado = valorCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
       
       let vencimentoCurto = "---";
       if (clientDueDate) {
-          const dia = String(clientDueDate.getUTCDate()).padStart(2, '0');
-          const mes = String(clientDueDate.getUTCMonth() + 1).padStart(2, '0');
-          vencimentoCurto = `${dia}/${mes}`;
+          vencimentoCurto = `${String(clientDueDate.getUTCDate()).padStart(2, '0')}/${String(clientDueDate.getUTCMonth() + 1).padStart(2, '0')}`;
       }
 
       const logRef = await db.collection('billing_messages').add({
-        bot: "billingBot",
-        batchId: batchId,
+        messageKey,
         customerId: doc.id,
         customerName: client.name || "N/A",
-        phone: client.phone || "",
-        mode: mode,
-        status: "analyzing",
-        reminderType: reminderType,
-        clientDueDate: clientDueDateStr,
-        calculatedValue: valorCalculado,
+        status: "processing", 
+        reminderType,
         createdAt: FieldValue.serverTimestamp()
       });
 
       if (!client.phone || valorCalculado <= 0) {
         summary.failed++;
-        await logRef.update({ status: "failed", reason: !client.phone ? "Telefone ausente" : "Valor R$ 0" });
+        await logRef.update({ status: "failed", reason: "Dados inválidos" });
         continue;
       }
 
       const textVars = {
-        nome: String(client.name || "Cliente"),
-        valor: String(valorFormatado),
+        nome: client.name || "Cliente",
+        valor: valorFormatado,
         vencimento: vencimentoCurto,
-        pix: String(client.pixKey || settings.pixKey || "Não informada"),
-        destinatario: String(client.recipientName || settings.pixKeyRecipient || settings.companyName || "SOS Piscina"),
-        CLIENTE: String(client.name || "Cliente"),
-        VALOR: String(valorFormatado),
-        VENCIMENTO_CURTO: vencimentoCurto
+        pix: client.pixKey || settings.pixKey || "Não informada",
+        destinatario: client.recipientName || settings.companyName || "SOS Piscina"
       };
 
       const message = replaceVars(billingBot.messageTemplate || "", textVars);
@@ -237,20 +213,11 @@ export default async function handler(req: any, res: any) {
         summary.sent++;
         await logRef.update({ status: "skipped_simulation", messagePreview: message });
       } else {
-        let templateConfig = undefined;
-        if (settings.whatsappTemplateName) {
-           templateConfig = {
-             name: settings.whatsappTemplateName,
-             language: settings.whatsappTemplateLanguage || "pt_BR",
-             parameters: [
-                { type: "text", text: textVars.nome },
-                { type: "text", text: textVars.valor },
-                { type: "text", text: textVars.vencimento },
-                { type: "text", text: textVars.pix },
-                { type: "text", text: textVars.destinatario }
-             ]
-           };
-        }
+        const templateConfig = settings.whatsappTemplateName ? {
+          name: settings.whatsappTemplateName,
+          language: settings.whatsappTemplateLanguage || "pt_BR",
+          parameters: Object.values(textVars).map(v => ({ text: v }))
+        } : undefined;
 
         const result = await sendWhatsAppMessage(client.phone, message, templateConfig);
         
@@ -268,7 +235,6 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ success: true, summary });
 
   } catch (error: any) {
-    console.error("🔥 Erro fatal no billing bot:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
