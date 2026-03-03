@@ -16,51 +16,24 @@ interface PreBudgetViewProps {
 
 const preBudgetTourSteps: TourStep[] = [
     {
-        selector: '[data-tour-id="form-title"]',
-        position: 'bottom',
-        title: 'Bem-vindo ao Tour!',
+        target: '[data-tour-id="form-title"]',
         content: 'Vamos mostrar como é fácil e rápido calcular um orçamento para a limpeza da sua piscina.',
     },
     {
-        selector: '[data-tour-id="dimensions"] legend',
-        highlightSelector: '[data-tour-id="dimensions"]',
-        position: 'bottom',
-        title: '1. Volume da Piscina',
-        content: 'Selecione a faixa de volume que mais se aproxima da sua piscina. O valor é calculado automaticamente com base nessa escolha.',
+        target: '[data-tour-id="service-type"]',
+        content: 'Informe se o serviço é para uma residência comum ou para uso coletivo como Academias ou Piscinas Centrais de Condomínios.',
     },
     {
-        selector: '[data-tour-id="options"] legend',
-        highlightSelector: '[data-tour-id="options"]',
-        position: 'bottom',
-        title: '2. Opções Adicionais',
-        content: 'Marque estas opções se sua piscina usa água de poço ou é usada para festas/eventos, pois isso pode influenciar no tratamento e no valor.',
+        target: '[data-tour-id="dimensions"]',
+        content: 'Selecione a faixa de volume da sua piscina. Para Academias, esta opção é bloqueada pois usamos um valor fixo diferenciado.',
     },
     {
-        selector: '[data-tour-id="plans"] h3',
-        highlightSelector: '[data-tour-id="plans"]',
-        position: 'bottom',
-        title: '3. Selecione um Plano',
-        content: 'Escolha o plano que melhor se adapta às suas necessidades. Ao selecionar, você verá os termos de serviço para aceitá-los.',
+        target: '[data-tour-id="options"]',
+        content: 'Marque estas opções se sua piscina usa água de poço ou é usada para festas/eventos.',
     },
     {
-        selector: '[data-tour-id="personal-data"] legend',
-        highlightSelector: '[data-tour-id="personal-data"]',
-        position: 'top',
-        title: '4. Seus Dados',
-        content: 'Preencha seus dados de contato. O e-mail que você informar aqui será usado para seu futuro acesso ao painel do cliente.',
-    },
-    {
-        selector: '[data-tour-id="address-section"] legend',
-        highlightSelector: '[data-tour-id="address-section"]',
-        position: 'top',
-        title: '5. Endereço',
-        content: 'Após preencher o endereço, clique no botão para validar a localização. Isso é obrigatório para ver o valor final.',
-    },
-    {
-        selector: '[data-tour-id="final-value"]',
-        position: 'top',
-        title: 'Valor Final e Envio',
-        content: 'Após aceitar os termos e calcular a distância, o valor mensal estimado aparecerá aqui. Se estiver de acordo, clique no botão para enviar sua solicitação.',
+        target: '[data-tour-id="plans"]',
+        content: 'Escolha o plano que melhor se adapta às suas necessidades.',
     },
 ];
 
@@ -79,6 +52,7 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
         state: '',
         zip: '',
     });
+    const [isPublicPool, setIsPublicPool] = useState(false);
     const [selectedTierIndex, setSelectedTierIndex] = useState<string>('');
     const [options, setOptions] = useState({
         hasWellWater: false,
@@ -92,8 +66,7 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isTourOpen, setIsTourOpen] = useState(false);
 
-    const [distanceFromHq, setDistanceFromHq] = useState<number | null>(null);
-    const [isCalculatingDistance, setIsCalculatingDistance] = useState(false);
+    const [distanceFromHq, setDistanceFromHq] = useState<number | string>('');
 
     useEffect(() => {
         const hasSeenTour = localStorage.getItem('hasSeenBudgetTour');
@@ -136,31 +109,35 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
             'name', 'email', 'phone', 
             'street', 'number', 'neighborhood', 'city', 'state'
         ];
-        return requiredFields.every(field => formData[field] && formData[field].trim() !== '') && 
-               selectedTierIndex !== '' && 
-               selectedPlanIdentifier !== '';
-    }, [formData, selectedTierIndex, selectedPlanIdentifier]);
+        const personalDataReady = requiredFields.every(field => formData[field] && formData[field].trim() !== '');
+        const serviceReady = isPublicPool || selectedTierIndex !== '';
+        const distanceReady = distanceFromHq !== '' && Number(distanceFromHq) >= 0;
+        
+        return personalDataReady && serviceReady && selectedPlanIdentifier !== '' && distanceReady;
+    }, [formData, selectedTierIndex, selectedPlanIdentifier, isPublicPool, distanceFromHq]);
 
     const volume = useMemo(() => {
+        if (isPublicPool) return 1; // Valor simbólico para pools públicos
         if (selectedTierIndex === '' || !filteredTiers[Number(selectedTierIndex)]) return 0;
         return filteredTiers[Number(selectedTierIndex)].max;
-    }, [selectedTierIndex, filteredTiers]);
+    }, [selectedTierIndex, filteredTiers, isPublicPool]);
 
     const monthlyFee = useMemo(() => {
-        if (!settings || volume <= 0 || !hasAgreedToTerms || !selectedPlanIdentifier) return 0;
+        if (!settings || (!isPublicPool && volume <= 0) || !hasAgreedToTerms || !selectedPlanIdentifier) return 0;
 
         const tempClient: Partial<Client> = {
             poolVolume: volume,
+            isPublicPool: isPublicPool,
             hasWellWater: options.hasWellWater,
             isPartyPool: options.isPartyPool,
             includeProducts: false,
             plan: selectedPlanType,
             fidelityPlan: selectedFidelityPlan,
-            distanceFromHq: distanceFromHq || 0,
+            distanceFromHq: Number(distanceFromHq) || 0,
         };
 
         return calculateClientMonthlyFee(tempClient, settings);
-    }, [volume, options, selectedPlanType, selectedFidelityPlan, settings, distanceFromHq, hasAgreedToTerms, selectedPlanIdentifier]);
+    }, [volume, isPublicPool, options, selectedPlanType, selectedFidelityPlan, settings, distanceFromHq, hasAgreedToTerms, selectedPlanIdentifier]);
 
     const handlePlanSelect = (identifier: string) => {
         setSelectedPlanIdentifier(identifier);
@@ -185,37 +162,10 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
         } else {
             setFormData({ ...formData, [name]: value });
         }
-        if (['street', 'number', 'city', 'neighborhood', 'state'].includes(name)) {
-            setDistanceFromHq(null);
-        }
     };
 
     const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setOptions({ ...options, [e.target.name]: e.target.checked });
-    };
-
-    const handleCalculateDistance = async () => {
-        if (!settings) return;
-        const { street, number, neighborhood, city, state, zip } = formData;
-        if (!street || !number || !city || !state) {
-            showNotification('Preencha ao menos Rua, Número, Cidade e Estado.', 'error');
-            return;
-        }
-
-        setIsCalculatingDistance(true);
-        try {
-            const km = await calculateDrivingDistance(settings.baseAddress, {
-                street, number, neighborhood, city, state, zip
-            });
-
-            setDistanceFromHq(km);
-            showNotification(`Localização validada! Distância: ${km} km.`, 'success');
-        } catch (error: any) {
-            console.error(error);
-            showNotification(error.message || "Erro ao localizar endereço. Tente remover complementos ou abreviações.", 'error');
-        } finally {
-            setIsCalculatingDistance(false);
-        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -224,12 +174,12 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
             showNotification("Por favor, preencha todos os campos e aceite os termos.", "error");
             return;
         }
-        if (volume <= 0) {
+        if (!isPublicPool && volume <= 0) {
              showNotification("Selecione uma faixa de volume válida.", "error");
              return;
         }
-        if (distanceFromHq === null) {
-            showNotification("Por favor, clique em 'Validar Endereço' antes de finalizar.", "error");
+        if (distanceFromHq === '' || Number(distanceFromHq) < 0) {
+            showNotification("Por favor, informe a distância em km.", "error");
             return;
         }
 
@@ -249,11 +199,12 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                 },
                 poolDimensions: { width: 0, length: 0, depth: 0 },
                 poolVolume: volume,
+                isPublicPool: isPublicPool,
                 hasWellWater: options.hasWellWater,
                 isPartyPool: options.isPartyPool,
                 plan: selectedPlanType,
                 monthlyFee: monthlyFee,
-                distanceFromHq: distanceFromHq,
+                distanceFromHq: Number(distanceFromHq),
             };
 
             if (selectedPlanType === 'VIP' && selectedFidelityPlan) {
@@ -295,16 +246,45 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                 </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-6">
+
+                {/* MODALIDADE DE SERVIÇO - PRIMEIRA OPÇÃO */}
+                <fieldset data-tour-id="service-type" className="border-2 border-primary-100 p-4 rounded-xl dark:border-gray-700 bg-primary-50/20">
+                    <legend className="px-2 font-black text-primary-600 dark:text-primary-400 uppercase text-xs tracking-widest">O serviço será contratado para:</legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                        <label className={`flex flex-col p-3 border-2 rounded-lg cursor-pointer transition-all ${!isPublicPool ? 'border-primary-500 bg-white dark:bg-gray-800 shadow-md' : 'border-gray-200 dark:border-gray-700 opacity-60'}`}>
+                            <div className="flex items-center gap-3">
+                                <input type="radio" name="serviceType" checked={!isPublicPool} onChange={() => setIsPublicPool(false)} className="h-4 w-4 text-primary-600" />
+                                <span className="font-bold text-sm">Residencial / Privado</span>
+                            </div>
+                            <p className="text-[10px] text-gray-500 mt-1 ml-7">Uso exclusivo de uma única família.</p>
+                        </label>
+
+                        <label className={`flex flex-col p-3 border-2 rounded-lg cursor-pointer transition-all ${isPublicPool ? 'border-primary-500 bg-white dark:bg-gray-800 shadow-md' : 'border-gray-200 dark:border-gray-700 opacity-60'}`}>
+                            <div className="flex items-center gap-3">
+                                <input type="radio" name="serviceType" checked={isPublicPool} onChange={() => { setIsPublicPool(true); setSelectedTierIndex(''); }} className="h-4 w-4 text-primary-600" />
+                                <span className="font-bold text-sm">Academia / Condomínio</span>
+                            </div>
+                            <p className="text-[10px] text-gray-500 mt-1 ml-7">Uso coletivo. Serviço qualificado para alto tráfego.</p>
+                        </label>
+                    </div>
+                </fieldset>
                 
-                <fieldset data-tour-id="dimensions" className="border p-4 rounded-md dark:border-gray-600">
+                <fieldset data-tour-id="dimensions" className={`border p-4 rounded-md dark:border-gray-600 transition-opacity ${isPublicPool ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
                     <legend className="px-2 font-semibold text-gray-700 dark:text-gray-300">1. Volume da Piscina</legend>
                     <div className="mt-2">
                         <Select
-                            label="Selecione a capacidade da sua piscina"
+                            label={isPublicPool ? "Volume bloqueado para esta modalidade" : "Selecione a capacidade da sua piscina"}
                             value={selectedTierIndex}
+                            disabled={isPublicPool}
                             onChange={(e) => setSelectedTierIndex(e.target.value)}
                             options={tierOptions}
                         />
+                        {isPublicPool && (
+                            <div className="mt-1 flex items-center gap-2 text-primary-600 dark:text-primary-400">
+                                <InformationCircleIcon className="w-4 h-4" />
+                                <p className="text-[10px] font-bold uppercase">Preço fixo aplicado para Piscinas Coletivas.</p>
+                            </div>
+                        )}
                     </div>
                 </fieldset>
 
@@ -386,7 +366,7 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                 </fieldset>
 
                 <fieldset data-tour-id="address-section" className="border p-4 rounded-md dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
-                    <legend className="px-2 font-semibold text-gray-700 dark:text-gray-300">5. Endereço e Validação</legend>
+                    <legend className="px-2 font-semibold text-gray-700 dark:text-gray-300">5. Endereço e Localização</legend>
                     <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 mt-2">
                         <Input containerClassName="sm:col-span-2" label="CEP" name="zip" value={formData.zip} onChange={handleInputChange} maxLength={9} placeholder="Opcional" />
                         <Input containerClassName="sm:col-span-4" label="Rua" name="street" value={formData.street} onChange={handleInputChange} required placeholder="Ex: Rua das Flores" />
@@ -396,26 +376,28 @@ const PreBudgetView: React.FC<PreBudgetViewProps> = ({ appContext }) => {
                         <Input containerClassName="sm:col-span-2" label="UF" name="state" value={formData.state} onChange={handleInputChange} required maxLength={2} placeholder="Ex: MG" />
                     </div>
                     
-                    <div className="mt-4 flex flex-col items-center">
-                        <Button type="button" onClick={handleCalculateDistance} isLoading={isCalculatingDistance} disabled={!formData.street || !formData.number || !formData.city || distanceFromHq !== null} variant={distanceFromHq !== null ? 'secondary' : 'primary'}>
-                            <SparklesIcon className="w-5 h-5 mr-2" />
-                            {distanceFromHq !== null ? 'Localização Validada ✓' : 'Validar Endereço'}
-                        </Button>
-                        {distanceFromHq === null && (
-                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2 text-center uppercase tracking-wide">É obrigatório validar o endereço para ver o valor da mensalidade.</p>
-                        )}
+                    <div className="mt-4">
+                        <Input 
+                            label="Distância do Centro de Governador Valadares (km)" 
+                            type="number" 
+                            value={distanceFromHq} 
+                            onChange={(e) => setDistanceFromHq(e.target.value)} 
+                            required 
+                            placeholder="Ex: 5"
+                        />
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 italic">Informe quantos quilômetros de distância o seu endereço fica do centro de GV para o cálculo do deslocamento.</p>
                     </div>
                 </fieldset>
                 
-                {isFormComplete && distanceFromHq !== null && hasAgreedToTerms ? (
+                {isFormComplete && hasAgreedToTerms ? (
                     <div data-tour-id="final-value" className="text-center p-4 bg-primary-50 dark:bg-primary-900/50 rounded-lg animate-fade-in border-2 border-primary-200">
-                        <p className="text-lg font-medium text-gray-700 dark:text-gray-300">Valor Mensal Estimado:</p>
+                        <p className="text-lg font-medium text-gray-700 dark:text-gray-300">Valor Mensal Estimado ({isPublicPool ? 'Piscina Coletiva' : 'Residencial'}):</p>
                         <p className="text-4xl font-bold text-primary-600 dark:text-primary-400">R$ {monthlyFee.toFixed(2).replace('.', ',')}</p>
-                        <p className="text-sm text-gray-500 mt-1">Distância da base: {distanceFromHq} km.</p>
+                        <p className="text-sm text-gray-500 mt-1">Distância informada: {distanceFromHq} km.</p>
                     </div>
                 ) : selectedPlanIdentifier && (
                     <div className="text-center p-4 bg-gray-100 dark:bg-gray-800 rounded text-gray-500 italic">
-                        {!hasAgreedToTerms ? 'Aceite os termos para liberar o cálculo do valor.' : 'Preencha o endereço completo e valide a localização para ver o valor final.'}
+                        {!hasAgreedToTerms ? 'Aceite os termos para liberar o cálculo do valor.' : 'Preencha todos os campos e informe a distância para ver o valor final.'}
                     </div>
                 )}
 
@@ -477,5 +459,11 @@ const PlanCard: React.FC<PlanCardProps> = ({ title, benefits, isSelected, onSele
         </div>
     )
 }
+
+const InformationCircleIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+    </svg>
+);
 
 export default PreBudgetView;

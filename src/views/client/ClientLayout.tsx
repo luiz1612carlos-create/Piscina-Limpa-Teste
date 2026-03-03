@@ -1,7 +1,6 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AuthContextType, AppContextType } from '../../types';
-import { MoonIcon, SunIcon, LogoutIcon, DashboardIcon, StoreIcon, DownloadIcon, XMarkIcon, QuestionMarkCircleIcon } from '../../constants';
+import { MoonIcon, SunIcon, LogoutIcon, DashboardIcon, StoreIcon, DownloadIcon, XMarkIcon, QuestionMarkCircleIcon, CheckBadgeIcon } from '../../constants';
 import { useTheme } from '../../hooks/useTheme';
 import ClientDashboardView from './ClientDashboardView';
 import ShopView from './ShopView';
@@ -16,81 +15,50 @@ interface ClientLayoutProps {
 
 type ClientView = 'dashboard' | 'shop';
 
-const clientDashboardTourSteps: TourStep[] = [
-    {
-        selector: '[data-tour-id="welcome-client"] header',
-        position: 'bottom',
-        title: 'Bem-vindo ao seu Painel!',
-        content: 'Este é o seu espaço para acompanhar tudo sobre a manutenção da sua piscina. Vamos fazer um tour rápido pelas principais funcionalidades.',
-    },
-    {
-        selector: '[data-tour-id="pool-status-header"]',
-        highlightSelector: '[data-tour-id="pool-status"]',
-        position: 'bottom',
-        title: 'Status da Piscina',
-        content: 'Aqui você pode ver em tempo real os últimos parâmetros medidos em sua piscina, como pH e cloro, e se ela está livre para uso.',
-    },
-    {
-        selector: '[data-tour-id="payment-header"]',
-        highlightSelector: '[data-tour-id="payment"]',
-        position: 'left',
-        title: 'Informações de Pagamento',
-        content: 'Acompanhe sua próxima data de vencimento e o valor da mensalidade. Você também pode copiar a chave PIX para facilitar o pagamento.',
-    },
-    {
-        selector: '[data-tour-id="plan-info-header"]',
-        highlightSelector: '[data-tour-id="plan-info"]',
-        position: 'left',
-        title: 'Detalhes do Seu Plano',
-        content: 'Consulte aqui os benefícios inclusos no seu contrato e leia os termos de serviço a qualquer momento.',
-    },
-    {
-        selector: '[data-tour-id="visit-history-header"]',
-        highlightSelector: '[data-tour-id="visit-history"]',
-        position: 'top',
-        title: 'Histórico de Visitas',
-        content: 'Todas as visitas dos nossos técnicos são registradas aqui, incluindo data, parâmetros medidos, observações e até fotos!',
-    },
-    {
-        selector: '[data-tour-id="client-stock-header"]',
-        highlightSelector: '[data-tour-id="client-stock"]',
-        position: 'left',
-        title: 'Seu Estoque de Produtos',
-        content: 'Acompanhe a quantidade de produtos de limpeza que você tem em casa. Quando estiver acabando, avisaremos você!',
-    },
-    {
-        selector: '[data-tour-id="shop-nav"]',
-        position: 'bottom',
-        title: 'Loja de Produtos',
-        content: 'Precisando de algo a mais? Clique aqui para visitar nossa loja e fazer pedidos de produtos adicionais com entrega na sua casa.',
-    },
-    {
-        selector: '[data-tour-id="welcome-client"] header',
-        position: 'bottom',
-        title: 'Tour Concluído!',
-        content: 'Pronto! Agora você já conhece as principais áreas do seu painel. Fique à vontade para explorar!',
-    },
-];
-
+const toDate = (timestamp: any): Date | null => {
+    if (!timestamp) return null;
+    if (typeof timestamp.toDate === 'function') return timestamp.toDate();
+    if (typeof timestamp === 'string') {
+        const d = new Date(timestamp);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    if (timestamp.seconds) return new Date(timestamp.seconds * 1000);
+    return null;
+};
 
 const ClientLayout: React.FC<ClientLayoutProps> = ({ authContext, appContext }) => {
-    const { userData, logout } = authContext;
+    const { userData, logout, user } = authContext;
     const { theme, toggleTheme } = useTheme();
     const [currentView, setCurrentView] = useState<ClientView>('dashboard');
     const { canInstall, promptInstall } = usePWAInstall();
     const [isInstallBannerVisible, setIsInstallBannerVisible] = useState(true);
     const [isTourOpen, setIsTourOpen] = useState(false);
+    const [isAcceptingTerms, setIsAcceptingTerms] = useState(false);
 
-    useEffect(() => {
-        const hasSeenTour = localStorage.getItem('hasSeenDashboardTour');
-        if (!hasSeenTour) {
-            setIsTourOpen(true);
+    const clientData = useMemo(() => {
+        return appContext.clients.find(c => c.uid === user?.uid) || null;
+    }, [appContext.clients, user?.uid]);
+
+    const needsTermsAcceptance = useMemo(() => {
+        if (!clientData || !appContext.settings) return false;
+        const lastAccepted = toDate(clientData.lastAcceptedTermsAt);
+        const termsUpdated = toDate(appContext.settings.termsUpdatedAt);
+        if (!lastAccepted) return true;
+        if (!termsUpdated) return false;
+        return lastAccepted < termsUpdated;
+    }, [clientData, appContext.settings]);
+
+    const handleAcceptTerms = async () => {
+        if (!clientData) return;
+        setIsAcceptingTerms(true);
+        try {
+            await appContext.acknowledgeTerms(clientData.id);
+            appContext.showNotification('Termos aceitos com sucesso!', 'success');
+        } catch (error) {
+            appContext.showNotification('Erro ao processar aceite.', 'error');
+        } finally {
+            setIsAcceptingTerms(false);
         }
-    }, []);
-
-    const handleCloseTour = () => {
-        localStorage.setItem('hasSeenDashboardTour', 'true');
-        setIsTourOpen(false);
     };
 
     const renderView = () => {
@@ -105,7 +73,7 @@ const ClientLayout: React.FC<ClientLayoutProps> = ({ authContext, appContext }) 
     };
 
     const navItems = [
-        { id: 'dashboard', label: 'Dashboard', icon: DashboardIcon },
+        { id: 'dashboard', label: 'Início', icon: DashboardIcon },
         { id: 'shop', label: 'Loja', icon: StoreIcon, disabled: !appContext.settings?.features.storeEnabled },
     ];
 
@@ -117,94 +85,83 @@ const ClientLayout: React.FC<ClientLayoutProps> = ({ authContext, appContext }) 
     ].filter(Boolean).join(' ');
 
     return (
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-tour-id="welcome-client">
-            <GuidedTour steps={clientDashboardTourSteps} isOpen={isTourOpen} onClose={handleCloseTour} />
-            {/* Install Banner */}
-            {canInstall && isInstallBannerVisible && (
-                 <div className="bg-primary-600 text-white p-3 flex items-center justify-center text-center text-sm gap-4">
-                    <DownloadIcon className="w-6 h-6 flex-shrink-0" />
-                    <span className="font-semibold flex-grow">Tenha o app na sua tela inicial para acesso rápido!</span>
-                    <div className="flex-shrink-0 flex gap-2">
-                        <Button size="sm" onClick={promptInstall} className="bg-white text-primary-600 hover:bg-gray-200">Instalar</Button>
-                        <button onClick={() => setIsInstallBannerVisible(false)} className="p-1 rounded-full hover:bg-white/20">
-                            <XMarkIcon className="w-5 h-5" />
-                        </button>
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+            {needsTermsAcceptance && appContext.settings && (
+                <div className="fixed inset-0 z-[100] bg-gray-900/90 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-fade-in border dark:border-gray-700 my-auto">
+                        <div className="p-6 border-b dark:border-gray-700 text-center">
+                            <CheckBadgeIcon className="w-12 h-12 text-primary-500 mx-auto mb-2" />
+                            <h2 className="text-xl font-black">Termos de Serviço e Condições</h2>
+                            <p className="text-xs text-gray-500 mt-1">Atualizado em: {toDate(appContext.settings.termsUpdatedAt)?.toLocaleDateString('pt-BR')}</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap text-gray-700 dark:text-gray-300 font-medium">
+                                {clientData?.plan === 'VIP' ? appContext.settings.plans.vip.terms : appContext.settings.plans.simple.terms}
+                            </div>
+                            <div className="p-4 bg-primary-50 dark:bg-primary-900/10 rounded-2xl border border-primary-100 dark:border-primary-800 text-xs text-primary-700 dark:text-primary-300">
+                                <strong>Atenção:</strong> Ao clicar em aceitar, você confirma que leu e concorda com as diretrizes de manutenção e precificação acima.
+                            </div>
+                        </div>
+                        <div className="p-6 border-t dark:border-gray-700 flex flex-col sm:flex-row gap-3">
+                            <Button variant="secondary" className="flex-1" onClick={logout}>Sair</Button>
+                            <Button className="flex-1" onClick={handleAcceptTerms} isLoading={isAcceptingTerms}>Li e Aceito os Termos</Button>
+                        </div>
                     </div>
                 </div>
             )}
 
-            {/* Header */}
-            <header className="bg-white dark:bg-gray-800 shadow-md sticky top-0 z-10">
-                <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-                    <div className="flex items-center gap-4">
-                        {appContext.settings?.logoUrl ? (
-                            <div className="h-14 w-32 flex items-center justify-center overflow-hidden">
-                                <img 
-                                    src={appContext.settings.logoUrl} 
-                                    alt={appContext.settings.companyName} 
-                                    className="max-w-full max-h-full"
-                                    style={{ 
-                                        objectFit: appContext.settings?.logoObjectFit || 'contain',
-                                        transform: `scale(${logoTransforms?.scale || 1}) rotate(${logoTransforms?.rotate || 0}deg)`,
-                                        filter: logoFilter
-                                    }} 
-                                />
+            <div className={needsTermsAcceptance ? 'opacity-20 pointer-events-none' : ''}>
+                <header className="bg-white dark:bg-gray-800 shadow-lg sticky top-0 z-10 border-b dark:border-gray-700">
+                    <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+                        <div className="flex items-center gap-6">
+                            {appContext.settings?.logoUrl ? (
+                                <div className="h-16 w-40 flex items-center justify-center overflow-hidden">
+                                    <img 
+                                        src={appContext.settings.logoUrl} 
+                                        alt={appContext.settings.companyName} 
+                                        className="max-w-full max-h-full"
+                                        style={{ 
+                                            objectFit: (appContext.settings?.logoObjectFit as React.CSSProperties['objectFit']) || 'contain',
+                                            transform: `scale(${(logoTransforms?.scale || 1) * 1.1}) rotate(${logoTransforms?.rotate || 0}deg)`,
+                                            filter: logoFilter
+                                        }} 
+                                    />
+                                </div>
+                            ) : (
+                                <h1 className="text-xl font-black text-primary-600 dark:text-primary-400 uppercase tracking-tighter">{appContext.settings?.companyName || 'Piscina Limpa'}</h1>
+                            )}
+                            <nav className="hidden md:flex items-center gap-2">
+                                {navItems.map(item => !item.disabled && (
+                                    <button
+                                        key={item.id}
+                                        onClick={() => setCurrentView(item.id as ClientView)}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${currentView === item.id ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                    >
+                                        <item.icon className="w-5 h-5" />
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <div className="hidden sm:flex flex-col items-end mr-2">
+                                <span className="text-[10px] font-black uppercase text-gray-400 tracking-tighter">Cliente</span>
+                                <span className="text-xs font-bold truncate max-w-[120px]">{userData?.name || userData?.email}</span>
                             </div>
-                        ) : (
-                            <h1 className="text-xl font-bold text-primary-600 dark:text-primary-400">{appContext.settings?.companyName || 'Piscina Limpa'}</h1>
-                        )}
-                        <nav className="hidden md:flex items-center gap-2">
-                            {navItems.map(item => !item.disabled && (
-                                <button
-                                    key={item.id}
-                                    data-tour-id={item.id === 'shop' ? 'shop-nav' : ''}
-                                    onClick={() => setCurrentView(item.id as ClientView)}
-                                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium ${currentView === item.id ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-                                >
-                                    <item.icon className="w-5 h-5" />
-                                    {item.label}
-                                </button>
-                            ))}
-                        </nav>
+                            <button onClick={toggleTheme} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                {theme === 'dark' ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+                            </button>
+                            <button onClick={logout} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <LogoutIcon className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                        <span className="text-sm hidden sm:inline">Olá, {userData?.name || userData?.email}</span>
-                         <button
-                            onClick={() => setIsTourOpen(true)}
-                            className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-                            aria-label="Fazer tour guiado"
-                            title="Fazer tour guiado"
-                        >
-                            <QuestionMarkCircleIcon className="w-5 h-5" />
-                        </button>
-                        <button onClick={toggleTheme} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700">
-                            {theme === 'dark' ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
-                        </button>
-                        <button onClick={logout} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700">
-                            <LogoutIcon className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-                {/* Mobile Nav */}
-                 <nav className="md:hidden flex items-center justify-around p-2 border-t dark:border-gray-700">
-                    {navItems.map(item => !item.disabled && (
-                        <button
-                            key={item.id}
-                             data-tour-id={item.id === 'shop' ? 'shop-nav-mobile' : ''}
-                            onClick={() => setCurrentView(item.id as ClientView)}
-                            className={`flex flex-col items-center gap-1 p-2 rounded-md text-xs font-medium w-full ${currentView === item.id ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300' : 'text-gray-600 dark:text-gray-300'}`}
-                        >
-                            <item.icon className="w-6 h-6" />
-                            {item.label}
-                        </button>
-                    ))}
-                </nav>
-            </header>
+                </header>
 
-            {/* Main Content */}
-            <main className="container mx-auto p-4 md:p-6">
-                {renderView()}
-            </main>
+                <main className="container mx-auto p-4 md:p-8">
+                    {renderView()}
+                </main>
+            </div>
         </div>
     );
 };

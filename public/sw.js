@@ -1,14 +1,14 @@
-const CACHE_NAME = "piscina-limpa-v56";
+const CACHE_NAME = "piscina-limpa-v55";
 
 const APP_SHELL_FILES = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/src/index.css'
+  '/index.css'
 ];
 
 self.addEventListener("install", event => {
-  console.log(`[SW v56] Instalando...`);
+  console.log(`[SW v55] Instalando...`);
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll(APP_SHELL_FILES);
@@ -18,7 +18,7 @@ self.addEventListener("install", event => {
 });
 
 self.addEventListener("activate", event => {
-  console.log("[SW v56] Ativando e limpando caches antigos...");
+  console.log("[SW v55] Ativando e limpando caches antigos...");
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
@@ -36,6 +36,7 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const requestUrl = new URL(event.request.url);
 
+  // Ignora chamadas de API e Firebase
   if (
     requestUrl.hostname.includes('googleapis.com') ||
     requestUrl.hostname.includes('gstatic.com') ||

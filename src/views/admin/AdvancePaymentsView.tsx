@@ -59,11 +59,11 @@ const AdvancePaymentsView: React.FC<AdvancePaymentsViewProps> = ({ appContext })
                                <div className="text-sm space-y-1 mt-2 pt-2 border-t dark:border-gray-600">
                                    <div className="flex justify-between">
                                        <span>Valor Original ({request.months} meses):</span>
-                                       <span>R$ {request.originalAmount.toFixed(2)}</span>
+                                       <span>R$ {request.originalAmount?.toFixed(2)}</span>
                                    </div>
                                     <div className="flex justify-between text-green-600 dark:text-green-400">
                                        <span>Desconto ({request.discountPercent}%):</span>
-                                       <span>- R$ {(request.originalAmount - request.finalAmount).toFixed(2)}</span>
+                                       <span>- R$ {((request.originalAmount || 0) - request.finalAmount).toFixed(2)}</span>
                                    </div>
                                </div>
 

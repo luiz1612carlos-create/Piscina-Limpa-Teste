@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { AppContextType, PoolEvent } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -82,7 +81,7 @@ const EventsView: React.FC<EventsViewProps> = ({ appContext }) => {
         setIsDeletingBatch(true);
         try {
             // Execute deletions in parallel
-            await Promise.all(expiredConfirmedEvents.map(event => deletePoolEvent(event.id)));
+            await Promise.all(expiredConfirmedEvents.map(event => deletePoolEvent(event.id!)));
             showNotification(`${expiredConfirmedEvents.length} eventos antigos foram removidos.`, 'success');
         } catch (error: any) {
             showNotification(error.message || 'Erro ao limpar histórico.', 'error');
@@ -141,7 +140,7 @@ const EventsView: React.FC<EventsViewProps> = ({ appContext }) => {
                                    <h3 className="text-xl font-semibold truncate pr-2">{event.clientName}</h3>
                                    {activeTab === 'acknowledged' && (
                                        <button 
-                                            onClick={() => handleDelete(event.id)} 
+                                            onClick={() => handleDelete(event.id!)} 
                                             className="text-gray-400 hover:text-red-500 transition-colors"
                                             title="Excluir Evento"
                                             disabled={!!processingId}
@@ -163,7 +162,7 @@ const EventsView: React.FC<EventsViewProps> = ({ appContext }) => {
                                 <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex justify-end">
                                     <Button
                                         size="sm"
-                                        onClick={() => handleAcknowledge(event.id)}
+                                        onClick={() => handleAcknowledge(event.id!)}
                                         isLoading={processingId === event.id}
                                         disabled={!!processingId}
                                     >

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { AppContextType, BudgetQuote, Address, PlanChangeRequest } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -48,9 +47,9 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
             return;
         }
 
-        setProcessingId(approvalBudget.id);
+        setProcessingId(approvalBudget.id!);
         try {
-            await approveBudgetQuote(approvalBudget.id, password, distance);
+            await approveBudgetQuote(approvalBudget.id!, password, distance);
             showNotification('Cliente criado e acesso liberado!', 'success');
             // Fechar apenas após sucesso
             setApprovalBudget(null);
@@ -140,9 +139,9 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
             return;
         }
         
-        setProcessingId(selectedPlanRequest.id);
+        setProcessingId(selectedPlanRequest.id!);
         try {
-            await respondToPlanChangeRequest(selectedPlanRequest.id, proposedPrice, adminNotes);
+            await respondToPlanChangeRequest(selectedPlanRequest.id!, proposedPrice, adminNotes);
             showNotification('Opções de orçamento enviadas ao cliente!', 'success');
             setSelectedPlanRequest(null);
         } catch (error: any) {
@@ -220,10 +219,10 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
                                         <div className="text-xl">→</div>
                                         <div className="text-primary-600 font-bold">Desejado: {request.requestedPlan}</div>
                                     </div>
-                                    <p className="text-xs text-gray-400 mt-2">Solicitado em: {new Date(request.createdAt?.seconds * 1000).toLocaleDateString()}</p>
+                                    <p className="text-xs text-gray-400 mt-2">Solicitado em: {request.createdAt && new Date(request.createdAt.seconds * 1000).toLocaleDateString()}</p>
                                 </CardContent>
                                 <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex justify-between items-center gap-2">
-                                    <Button variant="danger" size="sm" className="flex-1" onClick={() => handleRejectPlanRequest(request.id)} isLoading={processingId === request.id} disabled={!!processingId}>
+                                    <Button variant="danger" size="sm" className="flex-1" onClick={() => handleRejectPlanRequest(request.id!)} isLoading={processingId === request.id} disabled={!!processingId}>
                                         Recusar
                                     </Button>
                                     <Button size="sm" className="flex-1" onClick={() => handleOpenPlanResponse(request)} isLoading={processingId === request.id} disabled={!!processingId}>
@@ -380,16 +379,24 @@ const ApprovalsView: React.FC<ApprovalsViewProps> = ({ appContext }) => {
 const NewClientBudgetCard = ({ budget, processingId, onApprove, onReject }: { budget: BudgetQuote, processingId: string | null, onApprove: (id: string) => void, onReject: (id: string) => void }) => (
     <>
         <CardHeader>
-            <h3 className="text-xl font-semibold">{budget.name}</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">{budget.email}</p>
+            <div className="flex justify-between items-start">
+                <div>
+                    <h3 className="text-xl font-semibold">{budget.name}</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{budget.email}</p>
+                </div>
+                {budget.isPublicPool && (
+                    <span className="bg-primary-600 text-white text-[10px] px-2 py-1 rounded font-black uppercase tracking-tighter shadow-sm animate-pulse">ACADEMIA/CONDOMÍNIO</span>
+                )}
+            </div>
         </CardHeader>
         <CardContent className="space-y-3">
             <p><strong>Telefone:</strong> {budget.phone}</p>
             <p><strong>Endereço:</strong> {formatAddress(budget.address)}</p>
             
             <div className="pt-2 mt-2 border-t dark:border-gray-600 space-y-1 text-sm">
-                 <p><strong>Dimensões:</strong> {budget.poolDimensions.width}m x {budget.poolDimensions.length}m x {budget.poolDimensions.depth}m</p>
-                <p><strong>Volume:</strong> {budget.poolVolume?.toLocaleString('pt-BR')} L</p>
+                {!budget.isPublicPool && (
+                    <p><strong>Volume:</strong> {budget.poolVolume?.toLocaleString('pt-BR')} L</p>
+                )}
                 <p><strong>Água de Poço:</strong> {budget.hasWellWater ? 'Sim' : 'Não'}</p>
                 <p><strong>Piscina de Festa:</strong> {budget.isPartyPool ? 'Sim' : 'Não'}</p>
             </div>
@@ -401,18 +408,18 @@ const NewClientBudgetCard = ({ budget, processingId, onApprove, onReject }: { bu
                 </span>
             </p>
             <p className="text-2xl font-bold text-primary-600 dark:text-primary-400 text-center">
-                R$ {budget.monthlyFee.toFixed(2).replace('.', ',')} / mês
+                R$ {budget.monthlyFee?.toFixed(2).replace('.', ',')} / mês
             </p>
         </CardContent>
         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex justify-between items-center">
             <button 
                 className="text-red-600 hover:text-red-800 text-sm font-bold uppercase tracking-tighter" 
-                onClick={() => onReject(budget.id)} 
+                onClick={() => onReject(budget.id!)} 
                 disabled={!!processingId}
             >
                 Excluir
             </button>
-            <Button size="sm" onClick={() => onApprove(budget.id)} isLoading={processingId === budget.id} disabled={!!processingId}>Aprovar</Button>
+            <Button size="sm" onClick={() => onApprove(budget.id!)} isLoading={processingId === budget.id} disabled={!!processingId}>Aprovar</Button>
         </div>
     </>
 );

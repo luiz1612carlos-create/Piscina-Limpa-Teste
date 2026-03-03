@@ -15,6 +15,8 @@ import EventsView from './EventsView';
 import EmergenciesView from './EmergenciesView';
 import AIBotManagerView from './AIBotManagerView';
 import LiveChatView from './LiveChatView';
+import MarketingSettingsView from './MarketingSettingsView';
+import { MaintenanceHistoryView } from './MaintenanceHistoryView';
 
 interface AdminLayoutProps {
     authContext: AuthContextType;
@@ -97,6 +99,8 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
         { id: 'routes', label: 'Rotas', icon: RouteIcon },
         { id: 'store', label: 'Loja', icon: StoreIcon },
         { id: 'stock', label: 'Estoque Mestre', icon: ArchiveBoxIcon },
+        { id: 'maintenance_history', label: 'Histórico', icon: CalendarDaysIcon },
+        { id: 'marketing', label: 'Marketing/Slides', icon: SparklesIcon },
         { id: 'settings', label: 'Configurações', icon: SettingsIcon },
     ];
     
@@ -114,6 +118,8 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
             case 'settings': return <SettingsView appContext={appContext} authContext={authContext} />;
             case 'advances': return <AdvancePaymentsView appContext={appContext} />;
             case 'events': return <EventsView appContext={appContext} />;
+            case 'maintenance_history': return <MaintenanceHistoryView appContext={appContext} />;
+            case 'marketing': return <MarketingSettingsView appContext={appContext} />;
             default: return <ReportsView appContext={appContext} />;
         }
     };
@@ -129,44 +135,44 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ authContext, appContext }) =>
         <div className="flex h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
             {isSidebarOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-20 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <aside className={`fixed inset-y-0 left-0 z-30 w-64 bg-white dark:bg-gray-800 shadow-md flex flex-col transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                <div className="p-4 border-b dark:border-gray-700 h-20 flex items-center">
+                <div className="p-4 border-b dark:border-gray-700 h-24 flex items-center bg-gray-50/50 dark:bg-gray-900/20">
                     {appContext.settings?.logoUrl ? (
-                        <div className="h-14 w-full flex items-center justify-center overflow-hidden">
+                        <div className="h-16 w-full flex items-center justify-center overflow-hidden">
                             <img 
                                 src={appContext.settings.logoUrl} 
                                 alt={appContext.settings.companyName} 
                                 className="max-w-full max-h-full"
                                 style={{ 
-                                    objectFit: appContext.settings?.logoObjectFit || 'contain',
-                                    transform: `scale(${logoTransforms?.scale || 1}) rotate(${logoTransforms?.rotate || 0}deg)`,
+                                    objectFit: (appContext.settings?.logoObjectFit as React.CSSProperties['objectFit']) || 'contain',
+                                    transform: `scale(${(logoTransforms?.scale || 1) * 1.1}) rotate(${logoTransforms?.rotate || 0}deg)`,
                                     filter: logoFilter
                                 }} 
                             />
                         </div>
                     ) : (
-                        <h1 className="text-2xl font-bold text-primary-600 dark:text-primary-400">{appContext.settings?.companyName || 'Piscina Limpa'}</h1>
+                        <h1 className="text-xl font-black text-primary-600 dark:text-primary-400 uppercase tracking-tighter w-full text-center">{appContext.settings?.companyName || 'Piscina Limpa'}</h1>
                     )}
                 </div>
                 <nav className="flex-1 p-4 space-y-2 overflow-y-auto no-scrollbar">
                     {menuItems.map(item => (
-                        <button key={item.id} onClick={() => { setCurrentView(item.id as AdminView); setIsSidebarOpen(false); }} className={`w-full flex items-center p-2 rounded-md transition-colors ${currentView === item.id ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}>
+                        <button key={item.id} onClick={() => { setCurrentView(item.id as AdminView); setIsSidebarOpen(false); }} className={`w-full flex items-center p-2 rounded-md transition-colors ${currentView === item.id ? 'bg-primary-100 dark:bg-primary-900 text-primary-600 dark:text-primary-300' : 'hover:bg-gray-100 dark:hover:bg-gray-700 font-medium'}`}>
                             <item.icon className="w-6 h-6 mr-3" />
-                            <span>{item.label}</span>
-                            {item.count !== undefined && item.count > 0 && <span className="ml-auto text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center bg-red-500 shadow-sm">{item.count}</span>}
+                            <span className="text-sm">{item.label}</span>
+                            {item.count !== undefined && item.count > 0 && <span className="ml-auto text-white text-[10px] font-black rounded-full h-5 w-5 flex items-center justify-center bg-red-500 shadow-sm">{item.count}</span>}
                         </button>
                     ))}
                 </nav>
             </aside>
             <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="bg-white dark:bg-gray-800 shadow-sm p-4 flex justify-between md:justify-end items-center space-x-4">
+                <header className="bg-white dark:bg-gray-800 shadow-sm p-4 flex justify-between md:justify-end items-center space-x-4 border-b dark:border-gray-700">
                     <button className="p-2 rounded-full text-gray-500 dark:text-gray-400 md:hidden" onClick={() => setIsSidebarOpen(true)}><MenuIcon className="w-6 h-6" /></button>
                     <div className="flex items-center space-x-4">
-                        <span className="text-sm">Bem-vindo, {userData?.name}</span>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Olá, {userData?.name}</span>
                         <button onClick={toggleTheme} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700">{theme === 'dark' ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}</button>
                         <button onClick={logout} className="p-2 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"><LogoutIcon className="w-5 h-5" /></button>
                     </div>
                 </header>
-                <main className="flex-1 overflow-x-hidden overflow-y-auto p-6">{renderView()}</main>
+                <main className="flex-1 overflow-x-hidden overflow-y-auto p-6 bg-gray-50/50 dark:bg-gray-900/50">{renderView()}</main>
             </div>
         </div>
     );

@@ -13,10 +13,11 @@ import { NotificationType } from './types';
 import { MoonIcon, SunIcon, SettingsIcon, LogoutIcon } from './constants';
 import SetupView from './views/public/SetupView';
 import { Button } from './components/Button';
+import { ReviewSlider } from './components/ReviewSlider';
 
 const App: React.FC = () => {
     const { theme, toggleTheme } = useTheme();
-    const { user, userData, loading: authLoading, isAnonymous, login, logout, changePassword } = useAuth();
+    const { user, userData, loading: authLoading, isAnonymous, login, loginAnonymously, logout, changePassword } = useAuth();
     const appData = useAppData(user, userData);
 
     const [notification, setNotification] = useState<{ message: string; type: NotificationType } | null>(null);
@@ -30,7 +31,6 @@ const App: React.FC = () => {
     const [logoLoaded, setLogoLoaded] = useState(false);
     const imgRef = useRef<HTMLImageElement>(null);
 
-    // Corrigido: Dependência de logoError removida para evitar loop infinito
     useEffect(() => {
         setLogoError(false);
         setLogoLoaded(false);
@@ -52,8 +52,8 @@ const App: React.FC = () => {
     }, []);
 
     const authContextValue = useMemo(() => ({ 
-        user, userData, login, logout, changePassword, showNotification 
-    }), [user, userData, login, logout, changePassword, showNotification]);
+        user, userData, loading: authLoading, isAnonymous, login, loginAnonymously, logout, changePassword, showNotification 
+    }), [user, userData, authLoading, isAnonymous, login, loginAnonymously, logout, changePassword, showNotification]);
 
     const appContextValue = useMemo(() => ({ 
         ...appData, showNotification 
@@ -97,7 +97,7 @@ const App: React.FC = () => {
     const renderContent = () => {
         if (user && !isAnonymous && userData) {
             if (userData.role === 'client' && appData.settings?.features.maintenanceModeEnabled) {
-                const currentClient = appData.clients.find(c => c.uid === user.uid);
+                const currentClient = appData.clients.find((c: any) => c.uid === user.uid);
                 if (!currentClient?.allowAccessInMaintenance) {
                     return (
                         <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-center p-4 text-center">
@@ -135,15 +135,18 @@ const App: React.FC = () => {
         const grayscale = logoTransforms?.grayscale ?? 0;
         const scale = logoTransforms?.scale ?? 1;
         const rotate = logoTransforms?.rotate ?? 0;
-        const logoFilter = `brightness(${brightness}) contrast(${contrast}) grayscale(${grayscale})`;
+        const logoFilter = `brightness(${brightness}) contrast(${contrast}) grayscale(${grayscale}) drop-shadow(0 10px 15px rgba(0,0,0,0.1))`;
 
         return (
             <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center justify-center p-4 relative">
                 <div className="absolute top-4 right-4"><ThemeToggle /></div>
                 <div className="w-full max-w-4xl mx-auto">
-                    <header className="text-center mb-8">
+                    <header className="text-center mb-12">
                         {isValidLogo && !logoError ? (
-                            <div className="h-24 w-full mx-auto flex items-center justify-center overflow-hidden">
+                            <div className="h-44 w-full mx-auto flex items-center justify-center overflow-hidden relative group">
+                                {/* Glow Effect Background */}
+                                <div className="absolute inset-0 bg-primary-500/5 blur-3xl rounded-full scale-75 group-hover:bg-primary-500/10 transition-colors duration-500"></div>
+                                
                                 <img 
                                     ref={imgRef}
                                     src={rawLogoUrl} 
@@ -151,27 +154,37 @@ const App: React.FC = () => {
                                     onLoad={() => setLogoLoaded(true)}
                                     onError={() => setLogoError(true)}
                                     loading="eager"
-                                    className={`max-w-full max-h-full transition-all duration-700 ease-in-out ${logoLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
+                                    className={`max-w-full max-h-full transition-all duration-700 ease-in-out relative z-10 ${logoLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
                                     style={{ 
-                                        objectFit: appData.settings?.logoObjectFit || 'contain',
-                                        transform: `scale(${scale}) rotate(${rotate}deg)`,
+                                        objectFit: (appData.settings?.logoObjectFit as React.CSSProperties['objectFit']) || 'contain',
+                                        transform: `scale(${scale * 1.1}) rotate(${rotate}deg)`, // Ligeiramente maior aqui
                                         filter: logoFilter
                                     }} 
                                 />
                             </div>
                         ) : (
-                            <h1 className="text-4xl md:text-5xl font-bold text-primary-600 dark:text-primary-400">
+                            <h1 className="text-4xl md:text-5xl font-black text-primary-600 dark:text-primary-400 tracking-tighter uppercase">
                                 {appData.settings?.mainTitle || 'Piscina Limpa'}
                             </h1>
                         )}
-                        <p className="text-gray-600 dark:text-gray-300 mt-2">{appData.settings?.mainSubtitle || 'Compromisso e Qualidade'}</p>
+                        <p className="text-gray-600 dark:text-gray-400 mt-4 font-black uppercase tracking-[0.2em] text-xs opacity-70">
+                            {appData.settings?.mainSubtitle || 'Compromisso e Qualidade'}
+                        </p>
                     </header>
-                    <div className="bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden border dark:border-gray-700">
-                        <div className="flex border-b border-gray-200 dark:border-gray-700">
-                            <button onClick={() => setIsLoginView(false)} className={`flex-1 p-4 text-center font-semibold transition-colors duration-300 ${!isLoginView ? 'bg-primary-500 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}>Calcular Orçamento</button>
-                            <button onClick={() => setIsLoginView(true)} className={`flex-1 p-4 text-center font-semibold transition-colors duration-300 ${isLoginView ? 'bg-primary-500 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}>Acessar Painel</button>
+
+                    {/* Review Slider Section */}
+                    {appData.settings?.reviewSlides && appData.settings.reviewSlides.some(s => s.active && s.imageUrl) && (
+                        <div className="mb-10 max-w-2xl mx-auto w-full px-4 sm:px-0">
+                            <ReviewSlider slides={appData.settings.reviewSlides} />
                         </div>
-                        <div className="p-4 sm:p-8">
+                    )}
+
+                    <div className="bg-white dark:bg-gray-800 shadow-2xl rounded-3xl overflow-hidden border dark:border-gray-700 max-w-lg mx-auto w-full">
+                        <div className="flex border-b border-gray-200 dark:border-gray-700">
+                            <button onClick={() => setIsLoginView(false)} className={`flex-1 p-5 text-center text-xs font-black uppercase tracking-widest transition-colors duration-300 ${!isLoginView ? 'bg-primary-500 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-400'}`}>Novo Orçamento</button>
+                            <button onClick={() => setIsLoginView(true)} className={`flex-1 p-5 text-center text-xs font-black uppercase tracking-widest transition-colors duration-300 ${isLoginView ? 'bg-primary-500 text-white' : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-400'}`}>Acessar Painel</button>
+                        </div>
+                        <div className="p-8 sm:p-12">
                              {isLoginView ? <LoginView authContext={authContextValue} /> : <PreBudgetView appContext={appContextValue} />}
                         </div>
                     </div>

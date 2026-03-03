@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppContextType, Settings } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';

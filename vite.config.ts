@@ -14,14 +14,6 @@ export default defineConfig({
   // ⚛️ React
   plugins: [react()],
 
-  /**
-   * 📁 PUBLIC DIR
-   * ✔️ Use a pasta padrão /public
-   * ✔️ Não use a raiz
-   * ✔️ Não desative
-   */
-  // publicDir: 'public', // (opcional, é o padrão)
-
   server: {
     port: 3000,
     host: '0.0.0.0',
@@ -39,6 +31,17 @@ export default defineConfig({
 
     rollupOptions: {
       input: path.resolve(__dirname, 'index.html'),
+      // 📦 Configuração de Fragmentação Manual (Manual Chunking)
+      output: {
+        manualChunks(id) {
+          // Separa todas as bibliotecas do node_modules em um chunk chamado 'vendor'
+          if (id.includes('node_modules')) {
+            return 'vendor';
+          }
+        },
+      },
     },
+    // Opcional: Aumenta um pouco o limite do aviso para 600kb se necessário
+    chunkSizeWarningLimit: 600,
   },
 })

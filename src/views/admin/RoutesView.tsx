@@ -1,6 +1,4 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-// FIX: Import GoogleGenAI from @google/genai as per guidelines
 import { GoogleGenAI } from "@google/genai";
 import { AppContextType, Routes, Settings } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -13,7 +11,7 @@ interface RoutesViewProps {
     appContext: AppContextType;
 }
 
-const weekDays: (keyof Routes)[] = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+const weekDays: string[] = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
 
 const RoutesView: React.FC<RoutesViewProps> = ({ appContext }) => {
     const { routes, clients, loading, scheduleClient, unscheduleClient, toggleRouteStatus, showNotification, settings } = appContext;
@@ -35,18 +33,18 @@ const RoutesView: React.FC<RoutesViewProps> = ({ appContext }) => {
         }
     };
     
-    const handleRemoveClient = async (clientId: string, day: keyof Routes) => {
+    const handleRemoveClient = async (clientId: string, day: string) => {
          try {
-            await unscheduleClient(clientId, String(day));
+            await unscheduleClient(clientId, day);
             showNotification('Cliente removido da rota.', 'info');
         } catch (error: any) {
             showNotification(error.message || 'Erro ao remover cliente.', 'error');
         }
     };
 
-    const handleToggleRoute = async (day: keyof Routes, currentStatus: boolean) => {
+    const handleToggleRoute = async (day: string, currentStatus: boolean) => {
          try {
-            await toggleRouteStatus(String(day), !currentStatus);
+            await toggleRouteStatus(day, !currentStatus);
             showNotification(`Rota de ${day} ${!currentStatus ? 'iniciada' : 'finalizada'}.`, 'success');
         } catch (error: any) {
             showNotification(error.message || 'Erro ao atualizar status da rota.', 'error');
@@ -59,16 +57,19 @@ const RoutesView: React.FC<RoutesViewProps> = ({ appContext }) => {
         return activeClients.filter(c => !clientsInSelectedDay.includes(c.id));
     }, [clients, routes, selectedDay]);
 
+    if (loading.routes || loading.clients) {
+        return <div className="flex justify-center p-10"><Spinner size="lg" /></div>;
+    }
 
     return (
-        <div>
+        <div className="animate-fade-in">
             <h2 className="text-3xl font-bold mb-6">Gerenciamento de Rotas</h2>
 
             <WeatherForecast settings={settings} />
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Scheduling Panel */}
-                <Card className="lg:col-span-1">
+                <Card className="lg:col-span-1 h-fit">
                     <CardHeader><h3 className="text-xl font-semibold">Adicionar Cliente à Rota</h3></CardHeader>
                     <CardContent className="space-y-4">
                         <Select
@@ -83,8 +84,8 @@ const RoutesView: React.FC<RoutesViewProps> = ({ appContext }) => {
                         <Select
                             label="Dia da Semana"
                             value={selectedDay}
-                            onChange={(e) => setSelectedDay(e.target.value as any)}
-                            options={weekDays.map(d => ({ value: d, label: String(d) }))}
+                            onChange={(e) => setSelectedDay(e.target.value)}
+                            options={weekDays.map(d => ({ value: d, label: d }))}
                         />
                         <Button onClick={handleAddClientToRoute} className="w-full">Agendar Cliente</Button>
                     </CardContent>
@@ -93,25 +94,28 @@ const RoutesView: React.FC<RoutesViewProps> = ({ appContext }) => {
                 {/* Scheduled Routes */}
                 <div className="lg:col-span-2">
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                        {loading.routes || loading.clients ? <div className="col-span-full flex justify-center"><Spinner/></div> :
-                        weekDays.map(day => (
-                            <Card key={day}>
-                                <CardHeader className="flex justify-between items-center">
+                        {weekDays.map(day => (
+                            <Card key={day} className="border dark:border-gray-700">
+                                <CardHeader className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
                                     <h3 className="text-lg font-semibold">{day}</h3>
                                      <div className="flex items-center gap-2">
-                                        {routes[day]?.isRouteActive && <span className="text-xs font-bold text-green-500 animate-pulse">EM ROTA</span>}
-                                        <Button size="sm" onClick={() => handleToggleRoute(day, routes[day]?.isRouteActive || false)}>
-                                            {routes[day]?.isRouteActive ? 'Finalizar' : 'Iniciar Rota'}
+                                        {routes[day]?.isRouteActive && <span className="text-xs font-bold text-green-500 animate-pulse bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full">EM ROTA</span>}
+                                        <Button size="sm" variant={routes[day]?.isRouteActive ? 'danger' : 'primary'} onClick={() => handleToggleRoute(day, routes[day]?.isRouteActive || false)}>
+                                            {routes[day]?.isRouteActive ? 'Finalizar' : 'Iniciar'}
                                         </Button>
                                     </div>
                                 </CardHeader>
                                 <CardContent className="space-y-2 min-h-[10rem]">
-                                    {routes[day]?.clients.map(client => (
-                                        <div key={client.id} className="flex justify-between items-center p-2 bg-gray-100 dark:bg-gray-700 rounded">
-                                            <span>{client.name}</span>
-                                            <button onClick={() => handleRemoveClient(client.id, day)} className="text-red-500 hover:text-red-700">&times;</button>
-                                        </div>
-                                    ))}
+                                    {(!routes[day] || !routes[day].clients || routes[day].clients.length === 0) ? (
+                                        <p className="text-gray-400 text-sm text-center italic py-8">Nenhum cliente agendado.</p>
+                                    ) : (
+                                        routes[day].clients.map(client => (
+                                            <div key={client.id} className="flex justify-between items-center p-3 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-sm">
+                                                <span className="font-medium text-sm">{client.name}</span>
+                                                <button onClick={() => handleRemoveClient(client.id, day)} className="text-red-400 hover:text-red-600 p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors">&times;</button>
+                                            </div>
+                                        ))
+                                    )}
                                 </CardContent>
                             </Card>
                         ))}
@@ -178,7 +182,6 @@ const WeatherForecast: React.FC<{ settings: Settings | null }> = ({ settings }) 
                 setIsAnalyzing(true);
                 setAiAnalysis(''); // Clear previous analysis
                 try {
-                    // FIX: Followed guidelines - Initialize client using process.env.API_KEY directly
                     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
                     const prompt = `
@@ -188,13 +191,11 @@ const WeatherForecast: React.FC<{ settings: Settings | null }> = ({ settings }) 
                         (WMO Weather interpretation codes: 0-1 sol, 2-3 parcialmente nublado, 45-48 neblina, 51-65 chuva, 80-82 chuva forte).
                     `;
 
-                    // FIX: Updated to gemini-3-flash-preview as per task guidelines for simple text tasks
                     const response = await ai.models.generateContent({
                         model: 'gemini-3-flash-preview',
                         contents: prompt,
                     });
                     
-                    // FIX: Property access .text instead of deprecated .text()
                     const analysisText = response.text;
                     if (!analysisText) {
                         throw new Error("A IA retornou uma resposta vazia.");
@@ -228,9 +229,9 @@ const WeatherForecast: React.FC<{ settings: Settings | null }> = ({ settings }) 
                             const Icon = getWeatherIcon(f.weatherCode);
                             return (
                                 <div key={i} className="text-center">
-                                    <p className="font-bold">{i === 0 ? 'Hoje' : f.day.charAt(0).toUpperCase() + f.day.slice(1, 3)}</p>
-                                    <Icon className="w-10 h-10 mx-auto text-yellow-500 dark:text-yellow-400" />
-                                    <p>{f.temp}</p>
+                                    <p className="font-bold text-gray-700 dark:text-gray-300">{i === 0 ? 'Hoje' : f.day.charAt(0).toUpperCase() + f.day.slice(1, 3)}</p>
+                                    <Icon className="w-10 h-10 mx-auto text-yellow-500 dark:text-yellow-400 my-2" />
+                                    <p className="font-mono text-sm">{f.temp}</p>
                                 </div>
                             )
                         })
@@ -241,12 +242,12 @@ const WeatherForecast: React.FC<{ settings: Settings | null }> = ({ settings }) 
                 <CardHeader>
                     <div className="flex items-center gap-2">
                         <SparklesIcon className="w-5 h-5 text-purple-500" />
-                        <h3 className="font-semibold">Análise da IA</h3>
+                        <h3 className="font-semibold text-purple-700 dark:text-purple-300">Análise da IA</h3>
                     </div>
                 </CardHeader>
                 <CardContent>
-                    {isAnalyzing ? <Spinner /> : 
-                        <div className="text-sm space-y-2 whitespace-pre-wrap">
+                    {isAnalyzing ? <div className="flex items-center gap-2 text-sm text-gray-500"><Spinner size="sm" /> Analisando clima...</div> : 
+                        <div className="text-sm space-y-2 whitespace-pre-wrap text-gray-700 dark:text-gray-300">
                             {aiAnalysis ? aiAnalysis.split('\n').map((line, i) => {
                                 if (line.trim().startsWith('*') || line.trim().startsWith('-')) {
                                     return <p key={i} className="pl-4">{line}</p>;

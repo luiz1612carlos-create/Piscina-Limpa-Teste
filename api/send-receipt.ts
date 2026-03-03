@@ -10,7 +10,8 @@ export default async function handler(req: any, res: any) {
         clientName, 
         amount, 
         paymentMethod, 
-        companyName 
+        companyName,
+        clientId
     } = req.body;
 
     if (!clientPhone || !amount) {
@@ -30,19 +31,43 @@ export default async function handler(req: any, res: any) {
     const dataPagamento = new Date().toLocaleDateString('pt-BR');
     
     let formattedTo = String(clientPhone).replace(/\D/g, "");
-    // Ajuste para números estrangeiros: Não força 55 se o número original começa com "+" ou se já parece ter DDI
     if (!String(clientPhone).trim().startsWith("+") && (formattedTo.length === 10 || formattedTo.length === 11)) {
         formattedTo = "55" + formattedTo;
     }
 
     const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    const token = process.env.WHATSAPP_TOKEN;
+    const token = process.env.META_TOKEN || process.env.WHATSAPP_TOKEN;
 
     if (!phoneId || !token) {
         throw new Error("Credenciais de WhatsApp ausentes no ambiente.");
     }
 
-    const payload = {
+    const components: any[] = [
+        {
+            type: "body",
+            parameters: [
+                { type: "text", text: String(clientName || "Cliente") },
+                { type: "text", text: String(valorFormatado) },
+                { type: "text", text: String(dataPagamento) },
+                { type: "text", text: String(paymentMethod || "Pix") },
+                { type: "text", text: String(companyName || "Empresa") }
+            ]
+        }
+    ];
+
+    if (receiptBot.receiptImage) {
+        components.unshift({
+            type: "header",
+            parameters: [
+                {
+                    type: "image",
+                    image: { link: receiptBot.receiptImage }
+                }
+            ]
+        });
+    }
+
+    const payload: any = {
         messaging_product: "whatsapp",
         recipient_type: "individual",
         to: formattedTo,
@@ -50,18 +75,7 @@ export default async function handler(req: any, res: any) {
         template: {
             name: receiptBot.templateName,
             language: { code: receiptBot.templateLanguage || "pt_BR" },
-            components: [
-                {
-                    type: "body",
-                    parameters: [
-                        { type: "text", text: String(clientName || "Cliente") },
-                        { type: "text", text: String(valorFormatado) },
-                        { type: "text", text: String(dataPagamento) },
-                        { type: "text", text: String(paymentMethod || "Pix") },
-                        { type: "text", text: String(companyName || "Empresa") }
-                    ]
-                }
-            ]
+            components: components
         }
     };
 
@@ -71,7 +85,15 @@ export default async function handler(req: any, res: any) {
         body: JSON.stringify(payload),
     });
 
-    const resData = await response.json();
+    const contentType = response.headers.get("content-type");
+    let resData;
+    if (contentType && contentType.includes("application/json")) {
+        resData = await response.json();
+    } else {
+        const errorText = await response.text();
+        console.error("❌ Erro Crítico Meta (Não é JSON):", errorText);
+        return res.status(500).json({ error: "Meta API retornou erro não-JSON", detail: errorText.slice(0, 200) });
+    }
 
     if (!response.ok) {
         console.error("❌ Erro Meta API Recibo:", JSON.stringify(resData));
@@ -86,13 +108,31 @@ export default async function handler(req: any, res: any) {
 
     await db.collection('receipt_logs').add({
         timestamp: FieldValue.serverTimestamp(),
-        clientId: req.body.clientId || 'N/A',
+        clientId: clientId || 'N/A',
         clientName: clientName,
         phone: formattedTo,
         amount: amount,
         status: "sent",
         metaId: resData.messages?.[0]?.id
     });
+
+    // SINCRONIZAÇÃO LIVE CHAT
+    try {
+        const sessionRef = db.collection("chatSessions").doc(formattedTo);
+        const liveMessage = `[RECIBO] Pagamento de R$ ${valorFormatado} confirmado no dia ${dataPagamento}.`;
+        await sessionRef.set({
+            clientPhone: formattedTo,
+            clientName: clientName || "Cliente",
+            lastMessage: liveMessage,
+            lastMessageAt: FieldValue.serverTimestamp(),
+            status: "bot"
+        }, { merge: true });
+        await sessionRef.collection("messages").add({
+            text: liveMessage,
+            sender: "bot",
+            timestamp: FieldValue.serverTimestamp()
+        });
+    } catch (chatErr) {}
 
     return res.status(200).json({ success: true, metaId: resData.messages?.[0]?.id });
 

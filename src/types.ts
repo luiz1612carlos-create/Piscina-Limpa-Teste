@@ -1,23 +1,67 @@
+
+export enum PoolType {
+  CHLORINE = 'Cloro',
+  SALT = 'Sal',
+  OZONE = 'Ozônio',
+  UV = 'UV'
+}
+
+export type NotificationType = 'success' | 'error' | 'info';
+
+export interface ChemistryReading {
+  id: string;
+  date: string;
+  ph: number;
+  chlorine: number;
+  alkalinity: number;
+  cyanuricAcid: number;
+  temperature: number;
+  notes?: string;
+}
+
+export interface Pool {
+  id: string;
+  clientName: string;
+  address: string;
+  volume: number;
+  type: PoolType;
+  lastService: string;
+  readings: ChemistryReading[];
+  imageUrl?: string;
+}
+
+export interface ServiceTask {
+  id: string;
+  poolId: string;
+  date: string;
+  completed: boolean;
+  tasks: string[];
+}
+
+export type UserRole = 'admin' | 'technician' | 'client';
+export type PlanType = 'simple' | 'vip' | 'Simples' | 'VIP';
+export type OrderStatus = 'pending' | 'completed' | 'cancelled' | 'Pendente' | 'Enviado' | 'Entregue';
+export type ReplenishmentQuoteStatus = 'suggested' | 'sent' | 'approved' | 'rejected';
+export type AdvancePaymentRequestStatus = 'pending' | 'approved' | 'rejected';
+export type ClientStatus = 'Ativo' | 'Inativo' | 'Suspenso';
+export type PoolUsageStatus = 'Livre para uso' | 'Em tratamento' | 'Interditada';
+export type PaymentStatus = 'Pago' | 'Pendente' | 'Atrasado';
+
 export interface UserData {
     uid: string;
     email: string;
     name: string;
-    role: 'admin' | 'client' | 'technician';
+    role: UserRole;
 }
 
-export type PlanType = 'Simples' | 'VIP';
-export type ClientStatus = 'Ativo' | 'Pendente';
-export type PaymentStatus = 'Pago' | 'Pendente' | 'Atrasado';
-export type PoolUsageStatus = 'Livre para uso' | 'Em tratamento';
-export type BudgetQuoteStatus = 'pending' | 'approved' | 'rejected';
-export type OrderStatus = 'Pendente' | 'Enviado' | 'Entregue';
-export type ReplenishmentQuoteStatus = 'suggested' | 'sent' | 'approved' | 'rejected';
-export type AdvancePaymentRequestStatus = 'pending' | 'approved' | 'rejected';
-export type PoolEventStatus = 'notified' | 'acknowledged';
-export type PlanChangeStatus = 'pending' | 'quoted' | 'accepted' | 'rejected';
-export type EmergencyStatus = 'pending' | 'resolved';
-
-export type AdminView = 'reports' | 'approvals' | 'emergencies' | 'advances' | 'events' | 'clients' | 'routes' | 'store' | 'stock' | 'settings' | 'ai_bot' | 'live_chat';
+export interface ClientProduct {
+    productId: string;
+    name: string;
+    quantity: number;
+    currentStock?: number;
+    maxStock?: number;
+    maxQuantity?: number;
+}
 
 export interface Address {
     street: string;
@@ -28,216 +72,99 @@ export interface Address {
     zip: string;
 }
 
-export interface PoolStatus {
-    ph: number;
-    cloro: number;
-    alcalinidade: number;
-    uso: PoolUsageStatus;
-}
-
-export interface ClientProduct {
-    productId: string;
-    name: string;
-    quantity: number;
-    maxQuantity?: number;
-}
-
-export interface Bank {
-    id: string;
-    name: string;
-    pixKey?: string;
-    pixKeyRecipient?: string;
-}
-
-export interface Transaction {
-    id: string;
-    clientId: string;
-    clientName: string;
-    bankId: string;
-    bankName: string;
-    amount: number;
-    date: any;
-}
-
-export interface FidelityPlan {
-    id: string;
-    months: number;
-    discountPercent: number;
-}
-
-export interface Visit {
-    id: string;
-    technicianId: string;
-    technicianName: string;
-    timestamp: any;
-    ph: number;
-    cloro: number;
-    alcalinidade: number;
-    uso: PoolUsageStatus;
-    notes: string;
-    photoUrl?: string;
-}
-
-export interface EmergencyRequest {
-    id: string;
-    clientId: string;
-    clientName: string;
-    clientPhone: string;
-    address: string;
-    reason: string;
-    status: EmergencyStatus;
-    createdAt: any;
-}
-
-export interface ChatMessage {
-    id: string;
-    text: string;
-    sender: 'bot' | 'client' | 'admin';
-    timestamp: any;
-}
-
-export interface ChatSession {
-    id: string;
-    clientName: string;
-    clientPhone: string;
-    lastMessage: string;
-    lastMessageAt: any;
-    status: 'bot' | 'waiting' | 'human' | 'closed';
-    unreadCount: number;
-    messages?: ChatMessage[];
-}
-
-export interface ScheduledPlanChange {
-    newPlan: PlanType;
-    newPrice: number;
-    fidelityPlan?: FidelityPlan;
-    effectiveDate?: any;
-}
-
 export interface Client {
     id: string;
-    uid?: string;
+    uid: string;
     name: string;
     email: string;
     phone: string;
     address: Address;
-    poolDimensions: {
-        width: number;
-        length: number;
-        depth: number;
-    };
-    poolVolume: number;
-    hasWellWater: boolean;
-    includeProducts: boolean;
-    isPartyPool: boolean;
-    plan: PlanType;
-    fidelityPlan?: FidelityPlan;
+    poolDimensions?: any;
+    poolVolume?: number;
+    hasWellWater?: boolean;
+    includeProducts?: boolean;
+    isPartyPool?: boolean;
+    isPublicPool?: boolean;
+    plan: string;
     clientStatus: ClientStatus;
-    poolStatus: PoolStatus;
+    poolStatus: {
+        ph: number;
+        cloro: number;
+        alcalinidade: number;
+        uso: string;
+    };
     payment: {
         status: PaymentStatus;
         dueDate: string;
     };
     stock: ClientProduct[];
     pixKey?: string;
-    pixKeyRecipient?: string;
-    recipientName?: string;
-    bankId?: string;
-    allowAccessInMaintenance?: boolean;
-    createdAt: any;
-    visitHistory?: Visit[];
+    createdAt?: any;
     lastVisitDuration?: number;
-    advancePaymentUntil?: any;
-    customPricing?: PricingSettings;
     distanceFromHq?: number;
-    scheduledPlanChange?: ScheduledPlanChange;
+    fidelityPlan?: FidelityPlan | null;
+    visitHistory?: Visit[];
+    bankId?: string;
+    recipientName?: string;
+    advancePaymentUntil?: any;
+    scheduledPlanChange?: any;
     lastAcceptedTermsAt?: any;
+    allowAccessInMaintenance?: boolean;
+    customPricing?: PricingSettings;
+    disableReminders?: boolean;
 }
 
 export interface BudgetQuote {
-    id: string;
+    id?: string;
     name: string;
     email: string;
     phone: string;
-    address: Address;
-    poolDimensions: {
-        width: number;
-        length: number;
-        depth: number;
-    };
+    address: any;
+    poolDimensions: any;
     poolVolume: number;
     hasWellWater: boolean;
     isPartyPool: boolean;
-    plan: PlanType;
-    fidelityPlan?: FidelityPlan;
-    monthlyFee: number;
-    status: BudgetQuoteStatus;
-    createdAt: any;
+    isPublicPool?: boolean;
+    plan: string;
     distanceFromHq?: number;
-}
-
-export interface PlanChangeRequest {
-    id: string;
-    clientId: string;
-    clientName: string;
-    currentPlan: PlanType;
-    requestedPlan: PlanType;
-    status: PlanChangeStatus;
-    proposedPrice?: number;
-    adminNotes?: string;
+    fidelityPlan?: FidelityPlan | null;
+    status: 'pending' | 'approved' | 'rejected';
     createdAt: any;
-    updatedAt: any;
-}
-
-export interface RouteDay {
-    day: 'Segunda' | 'Terça' | 'Quarta' | 'Quinta' | 'Sexta' | 'Sábado' | 'Domingo';
-    clients: Client[];
-    isRouteActive: boolean;
-}
-
-export interface Routes {
-    [key: string]: RouteDay;
+    monthlyFee?: number;
 }
 
 export interface Product {
     id: string;
     name: string;
-    description: string;
     price: number;
-    stock: number;
-    imageUrl: string;
-}
-
-export interface StockProduct {
-    id: string;
-    name: string;
-    description: string;
-    unit: 'kg' | 'L' | 'un' | 'm' | 'm²' | 'pastilha';
+    imageUrl?: string;
+    description?: string;
+    category?: string;
+    stock?: number;
 }
 
 export interface CartItem extends Product {
     quantity: number;
 }
 
+export interface StockProduct {
+    id: string;
+    name: string;
+    quantity?: number;
+    minQuantity?: number;
+    productId?: string;
+    description?: string;
+    unit?: string;
+}
+
 export interface Order {
     id: string;
     clientId: string;
     clientName: string;
-    items: CartItem[];
+    items: any[];
     total: number;
     status: OrderStatus;
     createdAt: any;
-}
-
-export interface ReplenishmentQuote {
-    id: string;
-    clientId: string;
-    clientName: string;
-    items: CartItem[];
-    total: number;
-    status: ReplenishmentQuoteStatus;
-    createdAt: any;
-    updatedAt: any;
 }
 
 export interface AdvancePaymentOption {
@@ -245,163 +172,211 @@ export interface AdvancePaymentOption {
     discountPercent: number;
 }
 
-export interface AdvancePaymentRequest {
+export interface ReviewSlide {
     id: string;
-    clientId: string;
-    clientName: string;
-    months: number;
-    discountPercent: number;
-    originalAmount: number;
-    finalAmount: number;
-    status: AdvancePaymentRequestStatus;
-    createdAt: any;
-    updatedAt: any;
-}
-
-export interface PoolEvent {
-    id: string;
-    clientId: string;
-    clientName: string;
-    eventDate: any;
-    notes: string;
-    status: PoolEventStatus;
-    createdAt: any;
-}
-
-export interface RecessPeriod {
-    id: string;
-    name: string;
-    startDate: any;
-    endDate: any;
-}
-
-export interface LogoTransforms {
-    scale: number;
-    rotate: number;
-    brightness: number;
-    contrast: number;
-    grayscale: number;
+    imageUrl: string;
+    linkUrl: string;
+    text: string;
+    active: boolean;
 }
 
 export interface Settings {
     companyName: string;
     mainTitle: string;
     mainSubtitle: string;
-    logoUrl?: string;
-    logoObjectFit?: 'contain' | 'cover' | 'fill' | 'scale-down';
-    logoTransforms?: LogoTransforms;
-    baseAddress: Address;
+    logoUrl?: any;
+    logoObjectFit?: string;
+    logoTransforms?: any;
+    baseAddress: any;
     pixKey: string;
-    pixKeyRecipient?: string;
-    googleReviewUrl?: string;
-    whatsappMessageTemplate?: string;
-    announcementMessageTemplate?: string;
-    priceReadjustmentMessageTemplate?: string;
-    whatsappTemplateName?: string;
-    whatsappTemplateLanguage?: string;
-    termsUpdatedAt?: any;
-    pricing: {
-        perKm: number;
-        serviceRadius: number;
-        wellWaterFee: number;
-        productsFee: number;
-        partyPoolFee: number;
-        volumeTiers: {
-            min: number;
-            max: number;
-            price: number;
-        }[];
-    };
-    plans: {
-        simple: {
-            title: string;
-            benefits: string[];
-            terms: string;
-        };
-        vip: {
-            title: string;
-            benefits: string[];
-            terms: string;
-        };
-    };
+    pricing: PricingSettings;
+    plans: any;
     fidelityPlans: FidelityPlan[];
-    features: {
-        vipPlanEnabled: boolean;
-        planUpgradeEnabled: boolean;
-        vipPlanDisabledMessage: string;
-        vipUpgradeTitle?: string;
-        vipUpgradeDescription?: string;
-        storeEnabled: boolean;
-        advancePaymentPlanEnabled: boolean;
-        advancePaymentTitle: string;
-        advancePaymentSubtitleVIP: string;
-        advancePaymentSubtitleSimple: string;
-        maintenanceModeEnabled: boolean;
-        maintenanceMessage: string;
-    };
-    automation: {
-        replenishmentStockThreshold: number;
-    };
+    features: any;
+    automation: any;
     advancePaymentOptions: AdvancePaymentOption[];
-    recessPeriods?: RecessPeriod[];
-    aiBot?: {
-        enabled: boolean;
-        name: string;
-        siteUrl?: string;
-        welcomeRegistered: string;
-        menuRegistered: string;
-        welcomeUnregistered: string;
-        menuUnregistered: string;
-        accessPanelMessage: string;
-        schedulePartyMessage: string;
-        planInfoMessage: string;
-        quoteInstructionsMessage: string;
-        plansOverviewMessage: string;
-        humanHandoffMessage: string;
-        invoiceMessage: string;
-    };
-    billingBot?: {
+    aiBot: any;
+    billingBot: {
         enabled: boolean;
         dryRun: boolean;
         daysBeforeDue: number;
         messageTemplate: string;
+        billingImage?: string;
     };
-    receiptBot?: {
+    receiptBot: {
         enabled: boolean;
         templateName: string;
         templateLanguage: string;
+        receiptImage?: string;
     };
+    poolStatusBot: any;
+    recessPeriods?: RecessPeriod[];
+    reviewSlides?: ReviewSlide[];
+    whatsappTemplateName?: string;
+    whatsappTemplateLanguage?: string;
+    pixKeyRecipient?: string;
+    announcementMessageTemplate?: string;
+    termsUpdatedAt?: any;
+    googleReviewUrl?: string;
 }
 
-export type PricingSettings = Settings['pricing'];
-
-export interface AffectedClientPreview {
-    id: string;
-    name: string;
+export interface PricingSettings {
+    perKm: number;
+    serviceRadius: number;
+    wellWaterFee: number;
+    productsFee: number;
+    partyPoolFee: number;
+    publicPoolFee: number;
+    volumeTiers: any[];
 }
 
-export interface PendingPriceChange {
+export interface Routes {
+    [key: string]: {
+        day: string;
+        isRouteActive: boolean;
+        clients: Client[];
+    }
+}
+
+export interface ReplenishmentQuote {
     id: string;
-    effectiveDate: any;
-    newPricing: PricingSettings;
-    affectedClients: AffectedClientPreview[];
-    status: 'pending' | 'applied';
+    clientId: string;
+    clientName: string;
+    items: any[];
+    total: number;
+    status: ReplenishmentQuoteStatus;
     createdAt: any;
 }
 
-export type NotificationType = 'success' | 'error' | 'info';
-
-export interface AuthContextType {
-    user: any | null;
-    userData: UserData | null;
-    login: (email: string, pass: string) => Promise<void>;
-    logout: () => Promise<void>;
-    changePassword: (newPass: string) => Promise<void>;
-    showNotification: (message: string, type: NotificationType) => void;
+export interface Bank {
+    id: string;
+    name: string;
+    code?: string;
+    pixKey?: string;
+    pixKeyRecipient?: string;
 }
 
-export interface AppContextType extends AppData {
-    showNotification: (message: string, type: NotificationType) => void;
+export interface Transaction {
+    id?: string;
+    clientId: string;
+    clientName: string;
+    bankId: string;
+    bankName?: string;
+    amount: number;
+    date: any;
+}
+
+export interface AdvancePaymentRequest {
+    id: string;
+    clientId: string;
+    clientName?: string;
+    months: number;
+    finalAmount: number;
+    originalAmount?: number;
+    discountPercent?: number;
+    status: AdvancePaymentRequestStatus;
+    createdAt: any;
+    updatedAt?: any;
+}
+
+export interface FidelityPlan {
+    id: string;
+    months: number;
+    discountPercent: number;
+    title: string;
+}
+
+export interface Visit {
+    id: string;
+    ph: number;
+    cloro: number;
+    alcalinidade: number;
+    uso: string;
+    photoUrl?: string;
+    timestamp: any;
+    notes?: string;
+    obs?: string;
+    productsUsed?: { productId: string; name: string; quantity: number }[];
+    technicianName?: string;
+    technicianId?: string;
+}
+
+export interface PendingPriceChange {
+    id?: string;
+    effectiveDate: any;
+    newPricing: PricingSettings;
+    affectedClients: AffectedClientPreview[];
+    status: string;
+    createdAt: any;
+    updatedAt?: any;
+}
+
+export interface AffectedClientPreview {
+    clientId: string;
+    clientName: string;
+    oldPrice: number;
+    newPrice: number;
+}
+
+export interface PoolEvent {
+    id?: string;
+    status: string;
+    createdAt: any;
+    type?: string;
+    description?: string;
+    clientName?: string;
+    eventDate?: any;
+    notes?: string;
+}
+
+export interface RecessPeriod {
+    id: string;
+    startDate: string;
+    endDate: string;
+    reason: string;
+    name?: string;
+}
+
+export interface PlanChangeRequest {
+    id?: string;
+    clientId: string;
+    clientName: string;
+    currentPlan: string;
+    requestedPlan: string;
+    status: string;
+    createdAt: any;
+    proposedPrice?: number;
+    adminNotes?: string;
+}
+
+export interface EmergencyRequest {
+    id?: string;
+    clientId: string;
+    clientName?: string;
+    clientPhone?: string;
+    address?: string;
+    reason?: string;
+    description?: string;
+    status: string;
+    createdAt: any;
+}
+
+export interface ChatSession {
+    id?: string;
+    clientName: string;
+    clientPhone: string;
+    lastMessage: string;
+    lastMessageAt: any;
+    status: 'bot' | 'human' | 'waiting';
+    isHuman?: boolean;
+    unreadCount?: number;
+}
+
+export interface ChatMessage {
+    id?: string;
+    text: string;
+    sender: 'client' | 'bot' | 'admin';
+    timestamp: any;
 }
 
 export interface AppData {
@@ -422,75 +397,71 @@ export interface AppData {
     chatSessions: ChatSession[];
     settings: Settings | null;
     pendingPriceChanges: PendingPriceChange[];
-    loading: {
-        clients: boolean;
-        users: boolean;
-        budgetQuotes: boolean;
-        routes: boolean;
-        products: boolean;
-        stockProducts: boolean;
-        orders: boolean;
-        settings: boolean;
-        banks: boolean;
-        transactions: boolean;
-        replenishmentQuotes: boolean;
-        advancePaymentRequests: boolean;
-        pendingPriceChanges: boolean;
-        poolEvents: boolean;
-        planChangeRequests: boolean;
-        emergencyRequests: boolean;
-        chatSessions: boolean;
-    };
+    loading: any;
     setupCheck: 'checking' | 'needed' | 'done';
     isAdvancePlanGloballyAvailable: boolean;
-    advancePlanUsage: {
-        count: number;
-        percentage: number;
-    };
-    approveBudgetQuote: (budgetId: string, password: string, distanceFromHq?: number) => Promise<void>;
-    rejectBudgetQuote: (budgetId: string) => Promise<void>;
-    updateClient: (clientId: string, data: Partial<Client>) => Promise<void>;
-    deleteClient: (clientId: string) => Promise<void>;
-    markAsPaid: (client: Client, months: number, totalAmount: number) => Promise<void>;
-    updateClientStock: (clientId: string, stock: ClientProduct[]) => Promise<void>;
-    scheduleClient: (clientId: string, day: string) => Promise<void>;
-    unscheduleClient: (clientId: string, day: string) => Promise<void>;
-    toggleRouteStatus: (day: string, status: boolean) => Promise<void>;
-    saveProduct: (product: Omit<Product, 'id'> | Product, imageFile?: File) => Promise<void>;
-    deleteProduct: (productId: string) => Promise<void>;
-    saveStockProduct: (product: Omit<StockProduct, 'id'> | StockProduct) => Promise<void>;
-    deleteStockProduct: (productId: string, cleanupClients?: boolean) => Promise<void>;
-    removeStockProductFromAllClients: (productId: string) => Promise<number>;
-    saveBank: (bank: Omit<Bank, 'id'> | Bank) => Promise<void>;
-    deleteBank: (bankId: string) => Promise<void>;
-    updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
-    updateSettings: (newSettings: Partial<Settings>, logoFile?: File, removeLogo?: boolean, onProgress?: (progress: number) => void) => Promise<void>;
-    schedulePriceChange: (newPricing: PricingSettings, affectedClients: AffectedClientPreview[], effectiveDate: Date) => Promise<void>;
-    createBudgetQuote: (budget: Omit<BudgetQuote, 'id' | 'status' | 'createdAt'>) => Promise<void>;
-    createOrder: (order: Omit<Order, 'id' | 'createdAt'>) => Promise<void>;
+    advancePlanUsage: { count: number; percentage: number };
+    
+    approveBudgetQuote: (id: string, pass: string, dist?: number) => Promise<void>;
+    rejectBudgetQuote: (id: string) => Promise<void>;
+    updateClient: (id: string, data: Partial<Client>) => Promise<void>;
+    deleteClient: (id: string) => Promise<void>;
+    markAsPaid: (client: Client, months: number, total: number) => Promise<void>;
+    updateClientStock: (id: string, s: ClientProduct[]) => Promise<void>;
+    scheduleClient: (id: string, day: string) => Promise<void>;
+    unscheduleClient: (id: string, day: string) => Promise<void>;
+    toggleRouteStatus: (d: string, s: boolean) => Promise<void>;
+    saveProduct: (p: any, file?: File) => Promise<void>;
+    deleteProduct: (id: string) => Promise<void>;
+    saveStockProduct: (p: any) => Promise<void>;
+    deleteStockProduct: (id: string, cleanupClients?: boolean) => Promise<void>;
+    removeStockProductFromAllClients: (id: string) => Promise<number>;
+    saveBank: (b: any) => Promise<void>;
+    deleteBank: (id: string) => Promise<void>;
+    updateOrderStatus: (id: string, s: OrderStatus) => Promise<void>;
+    updateSettings: (newSettings: Partial<Settings>, logoFile?: File, removeLogo?: boolean, onProgress?: (progress: number) => void, billingImageFile?: File, receiptImageFile?: File, slideImages?: { [key: string]: File }) => Promise<void>;
+    schedulePriceChange: (p: PricingSettings, a: AffectedClientPreview[], d: Date) => Promise<void>;
+    createBudgetQuote: (b: any) => Promise<void>;
+    createOrder: (o: any) => Promise<void>;
     getClientData: () => Promise<Client | null>;
-    createInitialAdmin: (name: string, email: string, pass: string) => Promise<void>;
-    createTechnician: (name: string, email: string, pass: string) => Promise<void>;
-    updateReplenishmentQuoteStatus: (quoteId: string, status: ReplenishmentQuoteStatus) => Promise<void>;
+    createInitialAdmin: (n: string, e: string, p: string) => Promise<void>;
+    createTechnician: (n: string, e: string, p: string) => Promise<void>;
+    updateReplenishmentQuoteStatus: (id: string, s: ReplenishmentQuoteStatus) => Promise<void>;
     triggerReplenishmentAnalysis: () => Promise<number>;
-    createAdvancePaymentRequest: (request: Omit<AdvancePaymentRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-    approveAdvancePaymentRequest: (requestId: string) => Promise<void>;
-    rejectAdvancePaymentRequest: (requestId: string) => Promise<void>;
-    addVisitRecord: (clientId: string, visitData: Omit<Visit, 'id' | 'photoUrl' | 'timestamp' | 'technicianId' | 'technicianName'>, photoFile?: File, onProgress?: (progress: number) => void) => Promise<void>;
+    createAdvancePaymentRequest: (r: any) => Promise<void>;
+    approveAdvancePaymentRequest: (id: string) => Promise<void>;
+    rejectAdvancePaymentRequest: (id: string) => Promise<void>;
+    addVisitRecord: (cid: string, v: any, file?: File, onProgress?: (progress: number) => void) => Promise<void>;
     resetReportsData: () => Promise<void>;
-    createPoolEvent: (event: Omit<PoolEvent, 'id' | 'status' | 'createdAt' | 'clientId' | 'clientName'> & { clientId: string, clientName: string }) => Promise<void>;
-    acknowledgePoolEvent: (eventId: string) => Promise<void>;
-    deletePoolEvent: (eventId: string) => Promise<void>;
-    saveRecessPeriod: (recess: Omit<RecessPeriod, 'id'> | RecessPeriod) => Promise<void>;
-    deleteRecessPeriod: (recessId: string) => Promise<void>;
-    requestPlanChange: (clientId: string, clientName: string, currentPlan: PlanType, requestedPlan: PlanType) => Promise<void>;
-    respondToPlanChangeRequest: (requestId: string, proposedPrice: number, notes: string) => Promise<void>;
-    acceptPlanChange: (requestId: string, price: number, fidelityPlan?: FidelityPlan) => Promise<void>;
-    cancelPlanChangeRequest: (requestId: string) => Promise<void>;
-    cancelScheduledPlanChange: (clientId: string) => Promise<void>;
-    acknowledgeTerms: (clientId: string) => Promise<void>;
-    createEmergencyRequest: (data: Omit<EmergencyRequest, 'id' | 'status' | 'createdAt'>) => Promise<void>;
-    resolveEmergencyRequest: (requestId: string) => Promise<void>;
+    createPoolEvent: (e: any) => Promise<void>;
+    acknowledgePoolEvent: (id: string) => Promise<void>;
+    deletePoolEvent: (id: string) => Promise<void>;
+    saveRecessPeriod: (r: any) => Promise<void>;
+    deleteRecessPeriod: (id: string) => Promise<void>;
+    requestPlanChange: (cid: string, n: string, cp: PlanType, rp: PlanType) => Promise<void>;
+    respondToPlanChangeRequest: (id: string, p: number, n: string) => Promise<void>;
+    acceptPlanChange: (id: string, p: number, fidelityPlan?: FidelityPlan) => Promise<void>;
+    cancelPlanChangeRequest: (id: string) => Promise<void>;
+    cancelScheduledPlanChange: (id: string) => Promise<void>;
+    acknowledgeTerms: (id: string) => Promise<void>;
+    createEmergencyRequest: (d: any) => Promise<void>;
+    resolveEmergencyRequest: (id: string) => Promise<void>;
     sendAdminChatMessage: (sessionId: string, text: string) => Promise<void>;
-    closeChatSession: (sessionId: string) => Promise<void>;
+    closeChatSession: (sid: string) => Promise<void>;
 }
+
+export type AdminView = 'reports' | 'clients' | 'routes' | 'approvals' | 'store' | 'settings' | 'advances' | 'stock' | 'events' | 'emergencies' | 'ai_bot' | 'live_chat' | 'maintenance_history' | 'marketing';
+
+export interface AuthContextType {
+    user: any;
+    userData: UserData | null;
+    loading: boolean;
+    isAnonymous: boolean;
+    login: (email: string, pass: string) => Promise<any>;
+    loginAnonymously: () => Promise<any>;
+    logout: () => Promise<void>;
+    changePassword: (newPass: string) => Promise<void>;
+    showNotification: (msg: string, type: NotificationType) => void;
+}
+
+export type AppContextType = AppData & { showNotification: (msg: string, type: NotificationType) => void };

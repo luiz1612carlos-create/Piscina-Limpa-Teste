@@ -33,7 +33,7 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
     // Limpa notificações e reseta status visual ao selecionar a conversa
     useEffect(() => {
         if (selectedSessionId && activeSession) {
-            if (activeSession.unreadCount > 0 || activeSession.status === 'waiting') {
+            if ((activeSession.unreadCount || 0) > 0 || activeSession.status === 'waiting') {
                 // Atualiza no banco para sincronizar com todos os admins
                 db.collection('chatSessions').doc(selectedSessionId).update({ 
                     unreadCount: 0,
@@ -124,7 +124,7 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
                         sortedSessions.map(session => (
                             <button
                                 key={session.id}
-                                onClick={() => setSelectedSessionId(session.id)}
+                                onClick={() => setSelectedSessionId(session.id!)}
                                 className={`w-full text-left p-4 border-b dark:border-gray-700 transition-all flex items-center gap-3 relative ${selectedSessionId === session.id ? 'bg-primary-50 dark:bg-primary-900/20 shadow-inner' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${session.status === 'waiting' ? 'bg-red-500 animate-pulse ring-4 ring-red-500/20' : 'bg-primary-500'}`}>
@@ -133,7 +133,7 @@ const LiveChatView: React.FC<LiveChatViewProps> = ({ appContext }) => {
                                 <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-center mb-1">
                                         <h4 className="font-bold text-sm truncate pr-2">{session.clientName}</h4>
-                                        {session.unreadCount > 0 && (
+                                        {(session.unreadCount || 0) > 0 && (
                                             <span className="bg-green-600 text-white text-[10px] font-black h-5 w-5 flex items-center justify-center rounded-full shadow-lg shadow-green-600/20">
                                                 {session.unreadCount}
                                             </span>

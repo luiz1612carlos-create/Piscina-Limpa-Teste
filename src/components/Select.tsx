@@ -1,28 +1,34 @@
-
 import React from 'react';
 
-interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+interface Option {
+    value: string | number;
     label: string;
-    options: { value: string | number; label: string }[];
+}
+
+interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+    label?: string;
+    options: Option[];
+    error?: string;
     containerClassName?: string;
 }
 
-export const Select: React.FC<SelectProps> = ({ label, id, options, containerClassName = '', ...props }) => {
-    const selectId = id || `select-${props.name}`;
+export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(({ label, options, error, className = '', containerClassName = '', ...props }, ref) => {
     return (
-        <div className={`mb-4 ${containerClassName}`}>
-            <label htmlFor={selectId} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                {label}
-            </label>
+        <div className={`w-full ${containerClassName}`}>
+            {label && <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>}
             <select
-                id={selectId}
-                className="w-full px-3 py-2 border rounded-md shadow-sm bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                ref={ref}
+                className={`w-full px-4 py-2 rounded-lg border focus:ring-2 focus:ring-blue-500 outline-none transition-all dark:bg-gray-800 dark:border-gray-700 dark:text-white ${error ? 'border-red-500' : 'border-gray-300' } ${className}`}
                 {...props}
             >
-                {options.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                {options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                        {option.label}
+                    </option>
                 ))}
             </select>
+            {error && <span className="text-xs text-red-500 mt-1">{error}</span>}
         </div>
     );
-};
+});
+Select.displayName = 'Select';

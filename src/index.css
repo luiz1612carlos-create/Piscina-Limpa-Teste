@@ -1,25 +1,46 @@
-/* Global styles */
-.animate-fade-in {
-    animation: fadeIn 0.3s ease-out forwards;
+/* Importação das camadas base do Tailwind - ESSENCIAL */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Estilos Globais Customizados */
+@layer components {
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease-out forwards;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+
+    .tour-highlight {
+        position: relative;
+        z-index: 50 !important;
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7), 0 0 15px rgba(255,255,255,0.5);
+        border-radius: 6px;
+        transition: box-shadow 0.3s ease-in-out;
+    }
 }
 
+/* Keyframes de animações */
 @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from { 
+        opacity: 0; 
+        transform: translateY(10px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
 }
 
-.no-scrollbar::-webkit-scrollbar {
-    display: none;
-}
-.no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-
-.tour-highlight {
-    position: relative;
-    z-index: 50 !important;
-    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7), 0 0 15px rgba(255,255,255,0.5);
-    border-radius: 6px;
-    transition: box-shadow 0.3s ease-in-out;
+/* Reset básico para garantir que o app ocupe a tela toda */
+html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
 }

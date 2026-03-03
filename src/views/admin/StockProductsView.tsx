@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { AppContextType, StockProduct } from '../../types';
 import { Button } from '../../components/Button';
@@ -33,7 +32,7 @@ const StockProductsView: React.FC<StockProductsViewProps> = ({ appContext }) => 
         if (product) {
             setSelectedProduct(product);
         } else {
-            setSelectedProduct({ name: '', description: '', unit: 'un' });
+            setSelectedProduct({ name: '', description: '', unit: 'un', quantity: 0, minQuantity: 0 });
         }
         setIsModalOpen(true);
     };

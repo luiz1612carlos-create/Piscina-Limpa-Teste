@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { AppContextType, EmergencyRequest } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -93,7 +92,7 @@ const EmergenciesView: React.FC<EmergenciesViewProps> = ({ appContext }) => {
                                         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 flex gap-2">
                                             <Button 
                                                 className="flex-1 bg-green-600 hover:bg-green-700" 
-                                                onClick={() => handleResolve(req.id)}
+                                                onClick={() => handleResolve(req.id!)}
                                                 isLoading={processingId === req.id}
                                             >
                                                 <CheckIcon className="w-5 h-5 mr-2" />

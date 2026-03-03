@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppContextType, Client, PoolUsageStatus, Visit, ClientProduct, StockProduct } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
@@ -69,7 +70,7 @@ const TechnicianDashboardView: React.FC<TechnicianDashboardViewProps> = ({ appCo
 
             {selectedClient && (
                 <ClientVisitModal
-                    key={selectedClient.id} // Re-mount modal when client changes to ensure fresh state
+                    key={selectedClient.id}
                     client={selectedClient}
                     isOpen={!!selectedClient}
                     onClose={() => setSelectedClient(null)}
@@ -109,7 +110,7 @@ const ClientVisitModal: React.FC<ClientVisitModalProps> = ({ client, isOpen, onC
     const [ph, setPh] = useState(client.poolStatus.ph.toString());
     const [cloro, setCloro] = useState(client.poolStatus.cloro.toString());
     const [alcalinidade, setAlcalinidade] = useState(client.poolStatus.alcalinidade.toString());
-    const [uso, setUso] = useState<PoolUsageStatus>(client.poolStatus.uso);
+    const [uso, setUso] = useState<PoolUsageStatus>(client.poolStatus.uso as PoolUsageStatus);
     const [notes, setNotes] = useState('');
     const [stockData, setStockData] = useState<ClientProduct[]>(client.stock || []);
 
@@ -118,7 +119,7 @@ const ClientVisitModal: React.FC<ClientVisitModalProps> = ({ client, isOpen, onC
         setPh(client.poolStatus.ph.toString());
         setCloro(client.poolStatus.cloro.toString());
         setAlcalinidade(client.poolStatus.alcalinidade.toString());
-        setUso(client.poolStatus.uso);
+        setUso(client.poolStatus.uso as PoolUsageStatus);
         setNotes('');
     };
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { AppContextType, Product, CartItem, Order } from '../../types';
 import { Spinner } from '../../components/Spinner';

@@ -5,11 +5,15 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Spinner } from '../../components/Spinner';
 import { ToggleSwitch } from '../../components/ToggleSwitch';
+import { Card, CardContent, CardHeader } from '../../components/Card';
 import { TrashIcon, EditIcon, PlusIcon, CalendarDaysIcon, ChartBarIcon, CurrencyDollarIcon, SparklesIcon } from '../../constants';
 import { Modal } from '../../components/Modal';
 import { Select } from '../../components/Select';
 import { calculateClientMonthlyFee } from '../../utils/calculations';
 import { firebase } from '../../firebase';
+
+// This is a workaround for the no-build-tool environment
+declare const html2canvas: any;
 
 interface SettingsViewProps {
     appContext: AppContextType;
@@ -27,7 +31,7 @@ const toDate = (timestamp: any): Date | null => {
 const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
     const { settings, saveRecessPeriod, deleteRecessPeriod, showNotification } = appContext;
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [currentRecess, setCurrentRecess] = useState<any | null>(null);
+    const [currentRecess, setCurrentRecess] = useState<Omit<RecessPeriod, 'id'> | RecessPeriod | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     const today = new Date().toISOString().split('T')[0];
@@ -36,11 +40,11 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
         if (recess) {
             setCurrentRecess({
                 ...recess,
-                startDate: toDate(recess.startDate)?.toISOString().split('T')[0],
-                endDate: toDate(recess.endDate)?.toISOString().split('T')[0]
+                startDate: toDate(recess.startDate)?.toISOString().split('T')[0] || '',
+                endDate: toDate(recess.endDate)?.toISOString().split('T')[0] || ''
             });
         } else {
-            setCurrentRecess({ name: '', startDate: '', endDate: '' });
+            setCurrentRecess({ name: '', startDate: '', endDate: '', reason: '' });
         }
         setIsModalOpen(true);
     };
@@ -62,11 +66,14 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
 
         setIsSaving(true);
         try {
-            const recessToSave = {
+            const recessToSave: any = {
                 ...currentRecess,
                 startDate: new Date(currentRecess.startDate + 'T00:00:00'),
                 endDate: new Date(currentRecess.endDate + 'T23:59:59'),
             };
+            // Ensure reason matches name if reason is empty or missing, for compatibility
+            if (!recessToSave.reason) recessToSave.reason = recessToSave.name;
+
             await saveRecessPeriod(recessToSave);
             showNotification('Período de recesso salvo com sucesso!', 'success');
             handleCloseModal();
@@ -97,10 +104,10 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
                 </Button>
             </div>
             <div className="space-y-2">
-                {settings?.recessPeriods && settings.recessPeriods.length > 0 ? settings.recessPeriods.map((recess: RecessPeriod) => (
+                {settings?.recessPeriods && settings.recessPeriods.length > 0 ? settings.recessPeriods.map(recess => (
                     <div key={recess.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                         <div>
-                            <span className="font-medium">{recess.name}</span>
+                            <span className="font-medium">{recess.name || recess.reason}</span>
                             <p className="text-xs text-gray-500">
                                 {toDate(recess.startDate)?.toLocaleDateString('pt-BR')} - {toDate(recess.endDate)?.toLocaleDateString('pt-BR')}
                             </p>
@@ -125,8 +132,8 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
                 >
                     <Input 
                         label="Nome do Recesso" 
-                        value={currentRecess.name} 
-                        onChange={(e: any) => setCurrentRecess((prev: any) => ({...prev!, name: e.target.value}))}
+                        value={currentRecess.name || ''} 
+                        onChange={(e) => setCurrentRecess(prev => ({...prev!, name: e.target.value}))}
                         placeholder="Ex: Recesso de Fim de Ano"
                     />
                     <div className="grid grid-cols-2 gap-4">
@@ -135,14 +142,14 @@ const RecessManager = ({ appContext }: { appContext: AppContextType }) => {
                             type="date"
                             min={today}
                             value={currentRecess.startDate || ''} 
-                            onChange={(e: any) => setCurrentRecess((prev: any) => ({...prev!, startDate: e.target.value}))}
+                            onChange={(e) => setCurrentRecess(prev => ({...prev!, startDate: e.target.value}))}
                         />
                         <Input 
                             label="Data de Término" 
                             type="date"
                             min={currentRecess.startDate || today}
                             value={currentRecess.endDate || ''} 
-                            onChange={(e: any) => setCurrentRecess((prev: any) => ({...prev!, endDate: e.target.value}))}
+                            onChange={(e) => setCurrentRecess(prev => ({...prev!, endDate: e.target.value}))}
                         />
                     </div>
                 </Modal>
@@ -206,7 +213,7 @@ const UserManager = ({ appContext }: { appContext: AppContextType }) => {
                             </tr>
                         </thead>
                         <tbody>
-                            {users.map((user: UserData) => (
+                            {users.map(user => (
                                 <tr key={user.uid} className="border-b dark:border-gray-700">
                                     <td className="p-2">{user.name}</td>
                                     <td className="p-2">{user.email}</td>
@@ -231,21 +238,21 @@ const UserManager = ({ appContext }: { appContext: AppContextType }) => {
                     <Input 
                         label="Nome Completo do Técnico" 
                         value={name}
-                        onChange={(e: any) => setName(e.target.value)}
+                        onChange={(e) => setName(e.target.value)}
                         required
                     />
                     <Input 
                         label="Email do Técnico"
                         type="email"
                         value={email}
-                        onChange={(e: any) => setEmail(e.target.value)}
+                        onChange={(e) => setEmail(e.target.value)}
                         required
                     />
                     <Input 
                         label="Senha Inicial"
                         type="password"
                         value={password}
-                        onChange={(e: any) => setPassword(e.target.value)}
+                        onChange={(e) => setPassword(e.target.value)}
                         required
                         placeholder="Mínimo 6 caracteres"
                     />
@@ -253,7 +260,7 @@ const UserManager = ({ appContext }: { appContext: AppContextType }) => {
                         <strong>Atenção:</strong> Por segurança, ao criar um novo técnico você será desconectado e precisará fazer login novamente.
                     </div>
                      <div className="flex justify-end">
-                        <Button type="submit" isLoading={isSaving}>Salvar Técnico</Button>
+                        <Button type="submit" isLoading={isSaving}>Salvando...</Button>
                     </div>
                 </form>
             </Modal>
@@ -264,7 +271,7 @@ const UserManager = ({ appContext }: { appContext: AppContextType }) => {
 const BankManager = ({ appContext }: { appContext: AppContextType }) => {
     const { banks, saveBank, deleteBank, showNotification } = appContext;
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [currentBank, setCurrentBank] = useState<any | null>(null);
+    const [currentBank, setCurrentBank] = useState<Omit<Bank, 'id'> | (Bank & { pixKey?: string, pixKeyRecipient?: string }) | null>(null);
     const [isSaving, setIsSaving] = useState(false);
 
     const handleOpenModal = (bank: Bank | null = null) => {
@@ -314,7 +321,7 @@ const BankManager = ({ appContext }: { appContext: AppContextType }) => {
                 </Button>
             </div>
             <div className="space-y-2">
-                {banks.map((bank: Bank) => (
+                {banks.map(bank => (
                     <div key={bank.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                         <div>
                             <span className="font-medium">{bank.name}</span>
@@ -342,19 +349,19 @@ const BankManager = ({ appContext }: { appContext: AppContextType }) => {
                     <Input 
                         label="Nome do Banco/Conta" 
                         value={currentBank.name} 
-                        onChange={(e: any) => setCurrentBank((prev: any) => ({...prev!, name: e.target.value}))}
+                        onChange={(e) => setCurrentBank(prev => ({...prev!, name: e.target.value}))}
                         placeholder="Ex: PicPay, Itaú, Dinheiro"
                     />
                      <Input 
                         label="Chave PIX (Opcional)" 
                         value={currentBank.pixKey || ''} 
-                        onChange={(e: any) => setCurrentBank((prev: any) => ({...prev!, pixKey: e.target.value}))}
+                        onChange={(e) => setCurrentBank(prev => ({...prev!, pixKey: e.target.value}))}
                         placeholder="Chave PIX da conta"
                     />
                     <Input 
                         label="Nome do Destinatário (Opcional)" 
                         value={currentBank.pixKeyRecipient || ''} 
-                        onChange={(e: any) => setCurrentBank((prev: any) => ({...prev!, pixKeyRecipient: e.target.value}))}
+                        onChange={(e) => setCurrentBank(prev => ({...prev!, pixKeyRecipient: e.target.value}))}
                         placeholder="Nome do beneficiário"
                     />
                 </Modal>
@@ -366,54 +373,34 @@ const BankManager = ({ appContext }: { appContext: AppContextType }) => {
 const PlanEditor = ({ title, planKey, plan, setLocalSettings }: any) => {
     
     const handleChange = (field: string, value: string) => {
-        setLocalSettings((prev: Settings | null) => {
-            if (!prev) return null;
-            const plans = { ...prev.plans } as any;
-            plans[planKey] = { ...plans[planKey], [field]: value };
-            return { ...prev, plans };
-        });
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], [field]: value}}}));
     };
     
     const handleBenefitChange = (index: number, value: string) => {
         const newBenefits = [...plan.benefits];
         newBenefits[index] = value;
-        setLocalSettings((prev: Settings | null) => {
-            if (!prev) return null;
-            const plans = { ...prev.plans } as any;
-            plans[planKey] = { ...plans[planKey], benefits: newBenefits };
-            return { ...prev, plans };
-        });
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], benefits: newBenefits}}}));
     };
     
     const addBenefit = () => {
         const newBenefits = [...plan.benefits, 'Novo benefício'];
-        setLocalSettings((prev: Settings | null) => {
-            if (!prev) return null;
-            const plans = { ...prev.plans } as any;
-            plans[planKey] = { ...plans[planKey], benefits: newBenefits };
-            return { ...prev, plans };
-        });
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], benefits: newBenefits}}}));
     };
 
     const removeBenefit = (index: number) => {
         const newBenefits = plan.benefits.filter((_: any, i: number) => i !== index);
-        setLocalSettings((prev: Settings | null) => {
-            if (!prev) return null;
-            const plans = { ...prev.plans } as any;
-            plans[planKey] = { ...plans[planKey], benefits: newBenefits };
-            return { ...prev, plans };
-        });
+        setLocalSettings((prev: Settings | null) => ({...prev!, plans: {...prev!.plans, [planKey]: {...prev!.plans[planKey], benefits: newBenefits}}}));
     };
 
 
     return (
         <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow">
             <h3 className="text-xl font-semibold mb-4">{title}</h3>
-            <Input label="Título do Plano" value={plan.title} onChange={(e: any) => handleChange('title', e.target.value)} />
+            <Input label="Título do Plano" value={plan.title} onChange={(e) => handleChange('title', e.target.value)} />
             <h4 className="font-semibold mt-4 mb-2">Benefícios</h4>
             {plan.benefits.map((benefit: string, index: number) => (
                 <div key={index} className="flex items-center gap-2 mb-2">
-                    <Input label="" value={benefit} onChange={(e: any) => handleBenefitChange(index, e.target.value)} containerClassName="flex-grow mb-0" />
+                    <Input label="" value={benefit} onChange={(e) => handleBenefitChange(index, e.target.value)} containerClassName="flex-grow mb-0" />
                     <Button variant="danger" size="sm" onClick={() => removeBenefit(index)}><TrashIcon className="w-4 h-4"/></Button>
                 </div>
             ))}
@@ -422,7 +409,7 @@ const PlanEditor = ({ title, planKey, plan, setLocalSettings }: any) => {
             <h4 className="font-semibold mt-6 mb-2">Termos do Plano</h4>
             <textarea
                 value={plan.terms}
-                onChange={(e: any) => handleChange('terms', e.target.value)}
+                onChange={(e) => handleChange('terms', e.target.value)}
                 rows={5}
                 className="w-full p-2 border rounded-md bg-gray-50 dark:bg-gray-700 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
@@ -432,19 +419,19 @@ const PlanEditor = ({ title, planKey, plan, setLocalSettings }: any) => {
 
 const FidelityPlanEditor = ({ localSettings, setLocalSettings }: any) => {
     const handleFidelityPlanChange = (index: number, field: keyof Omit<FidelityPlan, 'id'>, value: number) => {
-        const newPlans = [...localSettings.fidelityPlans];
-        newPlans[index][field] = value;
+        const newPlans = [...(localSettings?.fidelityPlans || [])];
+        (newPlans[index] as any)[field] = value;
         setLocalSettings((prev: any) => ({ ...prev!, fidelityPlans: newPlans }));
     };
 
     const addFidelityPlan = () => {
         const newPlan = { id: Date.now().toString(), months: 0, discountPercent: 0 };
-        const newPlans = [...localSettings.fidelityPlans, newPlan];
+        const newPlans = [...(localSettings?.fidelityPlans || []), newPlan];
         setLocalSettings((prev: any) => ({ ...prev!, fidelityPlans: newPlans }));
     };
 
     const removeFidelityPlan = (index: number) => {
-        const newPlans = localSettings.fidelityPlans.filter((_: FidelityPlan, i: number) => i !== index);
+        const newPlans = (localSettings?.fidelityPlans || []).filter((_: FidelityPlan, i: number) => i !== index);
         setLocalSettings((prev: any) => ({ ...prev!, fidelityPlans: newPlans }));
     };
 
@@ -455,9 +442,9 @@ const FidelityPlanEditor = ({ localSettings, setLocalSettings }: any) => {
                 {localSettings.fidelityPlans.map((plan: FidelityPlan, index: number) => (
                     <div key={plan.id} className="flex items-center gap-2">
                         <span>Fidelidade de</span>
-                        <Input label="" type="number" value={plan.months} onChange={(e: any) => handleFidelityPlanChange(index, 'months', +e.target.value)} containerClassName="mb-0 w-20" />
+                        <Input label="" type="number" value={plan.months} onChange={(e) => handleFidelityPlanChange(index, 'months', +e.target.value)} containerClassName="mb-0 w-20" />
                         <span>meses com</span>
-                        <Input label="" type="number" value={plan.discountPercent} onChange={(e: any) => handleFidelityPlanChange(index, 'discountPercent', +e.target.value)} containerClassName="mb-0 w-20" />
+                        <Input label="" type="number" value={plan.discountPercent} onChange={(e) => handleFidelityPlanChange(index, 'discountPercent', +e.target.value)} containerClassName="mb-0 w-20" />
                         <span>% de desconto</span>
                         <Button variant="danger" size="sm" onClick={() => removeFidelityPlan(index)}><TrashIcon className="w-4 h-4"/></Button>
                     </div>
@@ -485,6 +472,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
     const [confirmPassword, setConfirmPassword] = useState('');
     const [isSavingPassword, setIsSavingPassword] = useState(false);
 
+    // Google Review
+    const [googleReviewUrl, setGoogleReviewUrl] = useState('');
+
     // Price change logic
     const [isPriceChangeModalOpen, setIsPriceChangeModalOpen] = useState(false);
     const [affectedClientsPreview, setAffectedClientsPreview] = useState<AffectedClientPreview[]>([]);
@@ -510,6 +500,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
             }
             setLocalSettings(initialSettings);
             setLogoPreview(settings.logoUrl || null);
+            setGoogleReviewUrl(settings.googleReviewUrl || '');
         }
     }, [settings, pendingChange]);
 
@@ -601,7 +592,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
     const handleTierChange = (index: number, field: 'min' | 'max' | 'price', value: number) => {
         setLocalSettings(prev => {
              const newPricing = { ...prev!.pricing };
-             const newTiers = prev!.pricing.volumeTiers.map((t: any, i: number) => 
+             const newTiers = prev!.pricing.volumeTiers.map((t, i) => 
                  i === index ? { ...t, [field]: value } : t
              );
              newPricing.volumeTiers = newTiers;
@@ -615,7 +606,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
     };
 
     const removeTier = (index: number) => {
-        const newTiers = localSettings.pricing.volumeTiers.filter((_: any, i: number) => i !== index);
+        const newTiers = localSettings.pricing.volumeTiers.filter((_, i) => i !== index);
         setLocalSettings(prev => ({...prev!, pricing: {...prev!.pricing, volumeTiers: newTiers}}));
     };
     
@@ -643,7 +634,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
             if (!prev) return null;
             return {
                 ...prev,
-                advancePaymentOptions: prev.advancePaymentOptions.filter((_: any, i: number) => i !== index)
+                advancePaymentOptions: prev.advancePaymentOptions.filter((_, i) => i !== index)
             };
         });
     };
@@ -665,11 +656,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
         setShouldRemoveLogo(true);
         setLogoFile(null);
         setLogoPreview(null);
-        setLocalSettings(prev => {
-            const newState = { ...prev! };
-            delete newState.logoUrl;
-            return newState;
-        });
+        setLocalSettings(prev => ({ ...prev!, logoUrl: undefined }));
+    };
+
+    const handleResetTemplate = () => {
+        const defaultTemplate = "Olá {CLIENTE}, tudo bem? Passando para lembrar sobre o vencimento da sua mensalidade no valor de R$ {VALOR} no dia {VENCIMENTO}. \n\nChave PIX: {PIX} \nDestinatário: {DESTINATARIO}\n\nAgradecemos a parceria!";
+        handleSimpleChange({ target: { name: 'whatsappMessageTemplate', value: defaultTemplate } } as any);
+        showNotification('Modelo de mensagem restaurado para o padrão.', 'info');
     };
 
     const handleSave = async () => {
@@ -686,12 +679,22 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                 settingsToSave.termsUpdatedAt = firebase.firestore.FieldValue.serverTimestamp();
             }
 
+            // If price changed, we need the modal decision before final save of pricing section
             if (hasPriceChanged) {
-                const affected = impactAnalysis.map(c => ({ id: c.id, name: c.name }));
+                const affected = impactAnalysis.map(c => ({
+                    clientId: c.id,
+                    clientName: c.name,
+                    oldPrice: c.currentFee,
+                    newPrice: c.newFee
+                }));
                 setAffectedClientsPreview(affected);
                 setIsPriceChangeModalOpen(true);
                 setIsSaving(false); 
                 return;
+            }
+
+            if (googleReviewUrl !== settings.googleReviewUrl) {
+                settingsToSave.googleReviewUrl = googleReviewUrl;
             }
 
             await updateSettings(
@@ -728,6 +731,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
 
             await schedulePriceChange(localSettings.pricing, affectedClientsPreview, effectiveDateObj);
             
+            // Also save non-pricing settings that might have changed
             const otherSettings = { ...localSettings };
             await updateSettings(otherSettings, logoFile || undefined, shouldRemoveLogo);
 
@@ -779,6 +783,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                 </div>
             </div>
 
+            <Card>
+                <CardHeader>
+                    <h3 className="text-xl font-semibold">Marketing e Avaliações</h3>
+                </CardHeader>
+                <CardContent>
+                    <Input 
+                        label="URL de Avaliação do Google" 
+                        placeholder="Cole o link do Google para seu cliente avaliar..." 
+                        value={googleReviewUrl} 
+                        onChange={e => setGoogleReviewUrl(e.target.value)} 
+                    />
+                </CardContent>
+            </Card>
+
             {isSaving && uploadProgress !== null && (
                 <div className="mb-4">
                     <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
@@ -813,11 +831,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                     <h3 className="text-xl font-semibold mb-4">Identidade Visual e Informações</h3>
                     <div className="grid md:grid-cols-2 gap-4">
                         <div className="space-y-4">
-                            <Input label="Nome da Empresa (para painéis)" name="companyName" value={localSettings.companyName} onChange={(e: any) => handleSimpleChange(e)} />
-                            <Input label="Título Principal (Tela Inicial)" name="mainTitle" value={localSettings.mainTitle || ''} onChange={(e: any) => handleSimpleChange(e)} />
-                            <Input label="Subtítulo (Tela Inicial)" name="mainSubtitle" value={localSettings.mainSubtitle || ''} onChange={(e: any) => handleSimpleChange(e)} />
-                            <Input label="Chave PIX Padrão" name="pixKey" value={localSettings.pixKey} onChange={(e: any) => handleSimpleChange(e)} />
-                            <Input label="Nome do Destinatário PIX (Padrão)" name="pixKeyRecipient" value={localSettings.pixKeyRecipient || ''} onChange={(e: any) => handleSimpleChange(e)} />
+                            <Input label="Nome da Empresa (para painéis)" name="companyName" value={localSettings.companyName} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Título Principal (Tela Inicial)" name="mainTitle" value={localSettings.mainTitle || ''} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Subtítulo (Tela Inicial)" name="mainSubtitle" value={localSettings.mainSubtitle || ''} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Chave PIX Padrão" name="pixKey" value={localSettings.pixKey} onChange={(e) => handleSimpleChange(e)} />
+                            <Input label="Nome do Destinatário PIX (Padrão)" name="pixKeyRecipient" value={localSettings.pixKeyRecipient || ''} onChange={(e) => handleSimpleChange(e)} />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -830,7 +848,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                         alt="Preview da logo"
                                         className="max-w-full max-h-full"
                                         style={{
-                                            objectFit: localSettings.logoObjectFit,
+                                            objectFit: localSettings.logoObjectFit as React.CSSProperties['objectFit'],
                                             transform: `scale(${localSettings.logoTransforms?.scale || 1}) rotate(${localSettings.logoTransforms?.rotate || 0}deg)`,
                                             filter: `brightness(${localSettings.logoTransforms?.brightness || 1}) contrast(${localSettings.logoTransforms?.contrast || 1}) grayscale(${localSettings.logoTransforms?.grayscale || 0})`,
                                             transition: 'transform 0.2s ease, filter 0.2s ease',
@@ -854,7 +872,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                             label="Ajuste da Imagem da Logo"
                                             name="logoObjectFit"
                                             value={localSettings.logoObjectFit}
-                                            onChange={(e: any) => handleSimpleChange(e)}
+                                            onChange={(e) => handleSimpleChange(e)}
                                             options={[
                                                 { value: 'contain', label: 'Conter (mostrar imagem inteira)' },
                                                 { value: 'cover', label: 'Preencher (pode cortar)' },
@@ -870,7 +888,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                                 <label className="block text-sm">Zoom (Escala): {Number(localSettings.logoTransforms?.scale || 1).toFixed(2)}x</label>
                                                 <input type="range" min="0.5" max="2" step="0.05" name="scale"
                                                     value={localSettings.logoTransforms?.scale || 1}
-                                                    onChange={(e: any) => handleSimpleChange(e, 'logoTransforms')}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
                                                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
                                                 />
                                             </div>
@@ -878,7 +896,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                                 <label className="block text-sm">Rotação: {localSettings.logoTransforms?.rotate}°</label>
                                                 <input type="range" min="-180" max="180" step="1" name="rotate"
                                                     value={localSettings.logoTransforms?.rotate || 0}
-                                                    onChange={(e: any) => handleSimpleChange(e, 'logoTransforms')}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
                                                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
                                                 />
                                             </div>
@@ -886,7 +904,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                                 <label className="block text-sm">Preto e Branco: {Math.round((localSettings.logoTransforms?.grayscale || 0) * 100)}%</label>
                                                 <input type="range" min="0" max="1" step="0.05" name="grayscale"
                                                     value={localSettings.logoTransforms?.grayscale || 0}
-                                                    onChange={(e: any) => handleSimpleChange(e, 'logoTransforms')}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
                                                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
                                                 />
                                             </div>
@@ -894,7 +912,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                                 <label className="block text-sm">Brilho: {Math.round((localSettings.logoTransforms?.brightness || 1) * 100)}%</label>
                                                 <input type="range" min="0" max="2" step="0.05" name="brightness"
                                                     value={localSettings.logoTransforms?.brightness || 1}
-                                                    onChange={(e: any) => handleSimpleChange(e, 'logoTransforms')}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
                                                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
                                                 />
                                             </div>
@@ -902,7 +920,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                                 <label className="block text-sm">Contraste: {Math.round((localSettings.logoTransforms?.contrast || 1) * 100)}%</label>
                                                 <input type="range" min="0" max="2" step="0.05" name="contrast"
                                                     value={localSettings.logoTransforms?.contrast || 1}
-                                                    onChange={(e: any) => handleSimpleChange(e, 'logoTransforms')}
+                                                    onChange={(e) => handleSimpleChange(e, 'logoTransforms')}
                                                     className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-600"
                                                 />
                                             </div>
@@ -948,7 +966,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                             name="replenishmentStockThreshold" 
                             type="number" 
                             value={localSettings.automation.replenishmentStockThreshold} 
-                            onChange={(e: any) => handleSimpleChange(e, 'automation')} 
+                            onChange={(e) => handleSimpleChange(e, 'automation')} 
                         />
                     </div>
                 </div>
@@ -984,21 +1002,22 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                             <strong>Atenção:</strong> Alterar as faixas de volume atualizará a calculadora de novos orçamentos imediatamente. 
                             Você poderá escolher a data de início da vigência para clientes ativos ao clicar em Salvar.
                         </p>
-                        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                            <Input label="Valor por KM" name="perKm" type="number" value={localSettings.pricing.perKm} onChange={(e: any) => handleSimpleChange(e, 'pricing')} />
-                            <Input label="Taxa Água de Poço" name="wellWaterFee" type="number" value={localSettings.pricing.wellWaterFee} onChange={(e: any) => handleSimpleChange(e, 'pricing')} />
-                            <Input label="Taxa de Produtos" name="productsFee" type="number" value={localSettings.pricing.productsFee} onChange={(e: any) => handleSimpleChange(e, 'pricing')} />
-                            <Input label="Taxa Piscina de Festa" name="partyPoolFee" type="number" value={localSettings.pricing.partyPoolFee} onChange={(e: any) => handleSimpleChange(e, 'pricing')} />
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                            <Input label="Valor por KM" name="perKm" type="number" value={localSettings.pricing.perKm} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                            <Input label="Taxa Água de Poço" name="wellWaterFee" type="number" value={localSettings.pricing.wellWaterFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                            <Input label="Taxa de Produtos" name="productsFee" type="number" value={localSettings.pricing.productsFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                            <Input label="Taxa Piscina de Festa" name="partyPoolFee" type="number" value={localSettings.pricing.partyPoolFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
+                            <Input label="Taxa Academia / Condomínio (Fixo)" name="publicPoolFee" type="number" value={localSettings.pricing.publicPoolFee} onChange={(e) => handleSimpleChange(e, 'pricing')} />
                         </div>
                         <h4 className="font-semibold mt-6 mb-2">Faixas de Preço por Volume</h4>
-                        {localSettings.pricing.volumeTiers.map((tier: any, index: number) => (
+                        {localSettings.pricing.volumeTiers.map((tier, index) => (
                             <div key={index} className="flex items-center gap-2 mb-2">
                             <span>De</span>
-                            <Input label="" type="number" value={tier.min} onChange={(e: any) => handleTierChange(index, 'min', +e.target.value)} containerClassName="mb-0" />
+                            <Input label="" type="number" value={tier.min} onChange={(e) => handleTierChange(index, 'min', +e.target.value)} containerClassName="mb-0" />
                             <span>até</span>
-                            <Input label="" type="number" value={tier.max} onChange={(e: any) => handleTierChange(index, 'max', +e.target.value)} containerClassName="mb-0" />
+                            <Input label="" type="number" value={tier.max} onChange={(e) => handleTierChange(index, 'max', +e.target.value)} containerClassName="mb-0" />
                             <span>litros, custa R$</span>
-                            <Input label="" type="number" value={tier.price} onChange={(e: any) => handleTierChange(index, 'price', +e.target.value)} containerClassName="mb-0" />
+                            <Input label="" type="number" value={tier.price} onChange={(e) => handleTierChange(index, 'price', +e.target.value)} containerClassName="mb-0" />
                             <Button variant="danger" size="sm" onClick={() => removeTier(index)}><TrashIcon className="w-4 h-4"/></Button>
                             </div>
                         ))}
@@ -1017,14 +1036,14 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                         <ToggleSwitch label="Ativar Plano VIP" enabled={localSettings.features.vipPlanEnabled} onChange={() => handleToggle('vipPlanEnabled')} />
                         {!localSettings.features.vipPlanEnabled && (
                             <div className="pl-8 mt-2">
-                                <Input label="Mensagem para Plano VIP desativado" name="vipPlanDisabledMessage" value={localSettings.features.vipPlanDisabledMessage || ''} onChange={(e: any) => handleSimpleChange(e, 'features')} />
+                                <Input label="Mensagem para Plano VIP desativado" name="vipPlanDisabledMessage" value={localSettings.features.vipPlanDisabledMessage || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
                             </div>
                         )}
                         {localSettings.features.vipPlanEnabled && (
                             <div className="pl-8 mt-2 space-y-2">
                                 <ToggleSwitch label="Permitir Solicitação de Upgrade de Plano pelo Cliente" enabled={localSettings.features.planUpgradeEnabled} onChange={() => handleToggle('planUpgradeEnabled')} />
-                                 <Input label="Título do Banner de Upgrade" name="vipUpgradeTitle" value={localSettings.features.vipUpgradeTitle || ''} onChange={(e: any) => handleSimpleChange(e, 'features')} />
-                                <Input label="Descrição do Banner de Upgrade" name="vipUpgradeDescription" value={localSettings.features.vipUpgradeDescription || ''} onChange={(e: any) => handleSimpleChange(e, 'features')} />
+                                 <Input label="Título do Banner de Upgrade" name="vipUpgradeTitle" value={localSettings.features.vipUpgradeTitle || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                <Input label="Descrição do Banner de Upgrade" name="vipUpgradeDescription" value={localSettings.features.vipUpgradeDescription || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
                             </div>
                         )}
                         <ToggleSwitch label="Ativar Loja para Clientes" enabled={localSettings.features.storeEnabled} onChange={() => handleToggle('storeEnabled')} />
@@ -1034,9 +1053,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                             <div className="pl-8 mt-4 space-y-2">
                                 <div className="space-y-4 pt-4 border-t dark:border-gray-700">
                                     <h4 className="font-semibold">Textos do Banner Promocional</h4>
-                                     <Input label="Título do Banner" name="advancePaymentTitle" value={localSettings.features.advancePaymentTitle || ''} onChange={(e: any) => handleSimpleChange(e, 'features')} />
-                                     <Input label="Subtítulo (Plano VIP)" name="advancePaymentSubtitleVIP" value={localSettings.features.advancePaymentSubtitleVIP || ''} onChange={(e: any) => handleSimpleChange(e, 'features')} />
-                                     <Input label="Subtítulo (Plano Simples)" name="advancePaymentSubtitleSimple" value={localSettings.features.advancePaymentSubtitleSimple || ''} onChange={(e: any) => handleSimpleChange(e, 'features')} />
+                                     <Input label="Título do Banner" name="advancePaymentTitle" value={localSettings.features.advancePaymentTitle || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                     <Input label="Subtítulo (Plano VIP)" name="advancePaymentSubtitleVIP" value={localSettings.features.advancePaymentSubtitleVIP || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
+                                     <Input label="Subtítulo (Plano Simples)" name="advancePaymentSubtitleSimple" value={localSettings.features.advancePaymentSubtitleSimple || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
                                 </div>
                                 <div className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md text-sm mt-6">
                                     <p><strong>Status da Adesão:</strong></p>
@@ -1044,12 +1063,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                 </div>
                                 <div className="space-y-4 pt-4 border-t dark:border-gray-700">
                                     <h4 className="font-semibold">Opções de Adiantamento</h4>
-                                    {localSettings.advancePaymentOptions.map((option: AdvancePaymentOption, index: number) => (
+                                    {localSettings.advancePaymentOptions.map((option, index) => (
                                         <div key={index} className="flex items-center gap-2">
                                             <span>Pagar</span>
-                                            <Input label="" type="number" value={option.months} onChange={(e: any) => handleAdvanceOptionChange(index, 'months', +e.target.value)} containerClassName="mb-0 w-20" />
+                                            <Input label="" type="number" value={option.months} onChange={(e) => handleAdvanceOptionChange(index, 'months', +e.target.value)} containerClassName="mb-0 w-20" />
                                             <span>meses com</span>
-                                            <Input label="" type="number" value={option.discountPercent} onChange={(e: any) => handleAdvanceOptionChange(index, 'discountPercent', +e.target.value)} containerClassName="mb-0 w-20" />
+                                            <Input label="" type="number" value={option.discountPercent} onChange={(e) => handleAdvanceOptionChange(index, 'discountPercent', +e.target.value)} containerClassName="mb-0 w-20" />
                                             <span>% de desconto</span>
                                             <Button variant="danger" size="sm" onClick={() => removeAdvanceOption(index)}><TrashIcon className="w-4 h-4"/></Button>
                                         </div>
@@ -1063,7 +1082,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                              <ToggleSwitch label="Modo Manutenção" enabled={localSettings.features.maintenanceModeEnabled} onChange={() => handleToggle('maintenanceModeEnabled')} />
                             {localSettings.features.maintenanceModeEnabled && (
                                 <div className="pl-8 mt-2">
-                                    <Input label="Mensagem de Manutenção" name="maintenanceMessage" value={localSettings.features.maintenanceMessage || ''} onChange={(e: any) => handleSimpleChange(e, 'features')} />
+                                    <Input label="Mensagem de Manutenção" name="maintenanceMessage" value={localSettings.features.maintenanceMessage || ''} onChange={(e) => handleSimpleChange(e, 'features')} />
                                 </div>
                             )}
                         </div>
@@ -1142,7 +1161,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                         label="Escolha a data de início" 
                                         type="date" 
                                         value={customEffectiveDate} 
-                                        onChange={(e: any) => setCustomEffectiveDate(e.target.value)}
+                                        onChange={(e) => setCustomEffectiveDate(e.target.value)}
                                         min={new Date().toISOString().split('T')[0]}
                                     />
                                 </div>
@@ -1153,7 +1172,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                             <p className="text-xs font-bold mb-1 uppercase text-gray-400">Clientes que receberão o reajuste:</p>
                             {affectedClientsPreview.length > 0 ? (
                                 <ul className="list-disc list-inside text-sm">
-                                    {affectedClientsPreview.map((c: AffectedClientPreview) => <li key={c.id}>{c.name}</li>)}
+                                    {affectedClientsPreview.map(c => <li key={c.clientId}>{c.clientName}</li>)}
                                 </ul>
                             ) : (
                                 <p className="text-sm italic">Nenhum cliente ativo será afetado.</p>
@@ -1174,7 +1193,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                     <p>Clientes afetados pela mudança de <strong>{toDate(pendingChange.effectiveDate)?.toLocaleDateString('pt-BR')}</strong>:</p>
                     <div className="mt-2 p-2 border rounded-md max-h-60 overflow-y-auto bg-gray-50 dark:bg-gray-700">
                         <ul className="list-disc list-inside">
-                            {pendingChange.affectedClients.map((c: AffectedClientPreview) => <li key={c.id}>{c.name}</li>)}
+                            {pendingChange.affectedClients.map(c => <li key={c.clientId}>{c.clientName}</li>)}
                         </ul>
                     </div>
                 </Modal>
@@ -1212,7 +1231,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ appContext, authContext }) 
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                {impactAnalysis.map((item: any) => (
+                                {impactAnalysis.map(item => (
                                     <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                         <td className="px-4 py-2 font-medium">{item.name}</td>
                                         <td className="px-4 py-2 text-right">R$ {item.currentFee.toFixed(2)}</td>

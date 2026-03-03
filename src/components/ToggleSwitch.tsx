@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 interface ToggleSwitchProps {
@@ -9,13 +8,22 @@ interface ToggleSwitchProps {
 
 export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ label, enabled, onChange }) => {
     return (
-        <label className="flex items-center justify-between cursor-pointer">
-            <span className="text-gray-700 dark:text-gray-300">{label}</span>
-            <div className="relative">
-                <input type="checkbox" className="sr-only" checked={enabled} onChange={(e) => onChange(e.target.checked)} />
-                <div className={`block w-14 h-8 rounded-full transition ${enabled ? 'bg-primary-600' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-                <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition transform ${enabled ? 'translate-x-6' : ''}`}></div>
-            </div>
-        </label>
+        <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
+            <button
+                type="button"
+                className={`${enabled ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'} 
+                    relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2`}
+                role="switch"
+                aria-checked={enabled}
+                onClick={() => onChange(!enabled)}
+            >
+                <span
+                    aria-hidden="true"
+                    className={`${enabled ? 'translate-x-5' : 'translate-x-0'} 
+                        pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                />
+            </button>
+        </div>
     );
 };

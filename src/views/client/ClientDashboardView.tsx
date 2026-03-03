@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { AuthContextType, AppContextType, Client, ReplenishmentQuote, Order, Settings, CartItem, AdvancePaymentRequest, PoolEvent, RecessPeriod, PendingPriceChange, PlanChangeRequest, FidelityPlan, EmergencyRequest, AffectedClientPreview } from '../../types';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { AuthContextType, AppContextType, Client, ReplenishmentQuote, Order, Settings, AdvancePaymentRequest, PoolEvent, RecessPeriod, PendingPriceChange, PlanChangeRequest, FidelityPlan, EmergencyRequest, AffectedClientPreview } from '../../types';
 import { Card, CardContent, CardHeader } from '../../components/Card';
 import { Spinner } from '../../components/Spinner';
 import { Button } from '../../components/Button';
@@ -18,9 +19,11 @@ import {
     DashboardIcon,
     ArchiveBoxIcon,
     UsersIcon,
-    RouteIcon
+    RouteIcon,
+    InformationCircleIcon
 } from '../../constants';
 import { calculateClientMonthlyFee } from '../../utils/calculations';
+import { GoogleReviewCard } from '../../components/GoogleReviewCard';
 
 interface ClientDashboardViewProps {
     authContext: AuthContextType;
@@ -103,14 +106,12 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
     const isInRecess = !!activeRecess;
 
-    // Lógica de Renovação: Informar com 30 dias de antecedência (1 mês)
     const advancePlanInfo = useMemo(() => {
         if (!clientData?.advancePaymentUntil) return null;
         const today = new Date();
         const advanceUntil = toDate(clientData.advancePaymentUntil);
         
         if (advanceUntil && advanceUntil > today) {
-            // A cobertura real vai até o dia anterior ao próximo vencimento
             const coverageEnd = new Date(advanceUntil);
             coverageEnd.setDate(coverageEnd.getDate() - 1);
             
@@ -121,7 +122,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 active: true,
                 renewalDate: advanceUntil,
                 coverageEnd: coverageEnd,
-                // O sistema avisa e permite renovar com 30 dias de antecedência (mês final de competência)
                 isExpiringSoon: diffDays <= 30,
                 showRenewalButton: diffDays <= 30
             };
@@ -172,7 +172,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         if (!clientData || !pendingPriceChanges || pendingPriceChanges.length === 0) return null;
         const relevantChange = pendingPriceChanges.find((change: PendingPriceChange) => 
             change.status === 'pending' && 
-            change.affectedClients.some((affected: AffectedClientPreview) => affected.id === clientData.id)
+            change.affectedClients.some((affected: AffectedClientPreview) => affected.clientId === clientData.id)
         );
         return relevantChange;
     }, [clientData, pendingPriceChanges]);
@@ -249,7 +249,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         if (!clientData || activePlanChangeRequest) return;
         setIsRequestingPlanChange(true);
         try {
-            await requestPlanChange(user.uid, clientData.name, clientData.plan, 'VIP');
+            await requestPlanChange(user.uid, clientData.name, clientData.plan as any, 'VIP');
             showNotification('Solicitação de upgrade enviada com sucesso!', 'success');
         } catch (error: any) {
             showNotification(error.message || 'Erro ao solicitar mudança.', 'error');
@@ -259,7 +259,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     };
 
     const handleAcceptPlanChange = async () => {
-        if (!activePlanChangeRequest || !activePlanChangeRequest.proposedPrice) return;
+        if (!activePlanChangeRequest || !activePlanChangeRequest.id || !activePlanChangeRequest.proposedPrice) return;
         const selectedOption = upgradeOptions.find((opt: any) => opt.id === selectedUpgradeOptionId);
         if (!selectedOption) return;
 
@@ -276,7 +276,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
     };
 
     const handleRejectPlanChange = async () => {
-        if (!activePlanChangeRequest) return;
+        if (!activePlanChangeRequest || !activePlanChangeRequest.id) return;
         setIsRequestingPlanChange(true);
         try {
             await cancelPlanChangeRequest(activePlanChangeRequest.id);
@@ -317,9 +317,13 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
         }
     };
     
-    const copyToClipboard = (text: string) => {
-        navigator.clipboard.writeText(text);
-        showNotification('Chave PIX copiada!', 'info');
+    const copyToClipboard = (text: string | undefined) => {
+        if (text) {
+            navigator.clipboard.writeText(text);
+            showNotification('Chave PIX copiada!', 'info');
+        } else {
+            showNotification('Nenhuma chave PIX para copiar.', 'error');
+        }
     };
 
     const isBlockedByDueDate = useMemo(() => {
@@ -376,7 +380,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                 {activeTab === 'summary' && (
                     <div className="space-y-6 animate-fade-in text-gray-800 dark:text-gray-100">
                         <div className="space-y-4">
-                            {/* Badge de Plano Adiantado Ativo */}
                             {advancePlanInfo?.active && (
                                 <div className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white p-4 rounded-xl shadow-lg border border-yellow-400 flex items-center gap-3 animate-fade-in">
                                     <SparklesIcon className="w-8 h-8 flex-shrink-0" />
@@ -453,7 +456,6 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
                                 </Card>
                             )}
 
-                            {/* Banner de Renovação Antecipada ou Adesão ao Adiantamento */}
                             {isAdvancePlanGloballyAvailable && !isBlockedByDueDate && (!advancePlanInfo?.active || advancePlanInfo.showRenewalButton) && (
                                 <div className="bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl p-6 shadow-lg animate-fade-in">
                                     <h3 className="text-xl font-black mb-1">
@@ -498,6 +500,7 @@ const ClientDashboardView: React.FC<ClientDashboardViewProps> = ({ authContext, 
 
                             {upcomingRecesses.length > 0 && <RecessNotificationCard recesses={upcomingRecesses} />}
                             {priceChangeNotification && <PriceChangeNotificationCard notification={priceChangeNotification} currentFee={monthlyFee} />}
+                            {settings.googleReviewUrl && <GoogleReviewCard reviewUrl={settings.googleReviewUrl} />}
                             {pendingQuote && <ReplenishmentCard quote={pendingQuote} client={clientData} updateStatus={updateReplenishmentQuoteStatus} createOrder={createOrder} showNotification={showNotification}/>}
                             {showStatusCard && mostRecentRequest && <RequestStatusCard request={mostRecentRequest} />}
                         </div>
@@ -902,9 +905,8 @@ const EventSchedulerCard = ({ client, poolEvents, createPoolEvent, showNotificat
     const [date, setDate] = useState('');
     const [notes, setNotes] = useState('');
     const [isSaving, setIsSaving] = useState(false);
-    const clientEvents = useMemo(() => poolEvents.filter((e: any) => e.clientId === client.uid).sort((a: any, b: any) => (toDate(b.eventDate)?.getTime() || 0) - (toDate(a.eventDate)?.getTime() || 0)), [poolEvents, client.uid]);
+    const clientEvents = useMemo(() => poolEvents.filter((e: any) => e.clientId === client.uid).sort((a: any, b: any) => (toDate(a.eventDate)?.getTime() || 0) - (toDate(b.eventDate)?.getTime() || 0)), [poolEvents, client.uid]);
 
-    // FIX: Using React namespace for FormEvent
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSaving(true);

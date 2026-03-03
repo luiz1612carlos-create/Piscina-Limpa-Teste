@@ -7,6 +7,7 @@ import { Spinner } from '../../components/Spinner';
 import { Modal } from '../../components/Modal';
 import { Input } from '../../components/Input';
 import { Select } from '../../components/Select';
+import { ToggleSwitch } from '../../components/ToggleSwitch';
 import { ClientStockManager } from '../../components/ClientStockManager';
 import { SparklesIcon, CheckBadgeIcon } from '../../constants';
 
@@ -152,12 +153,9 @@ const ClientsView: React.FC<ClientsViewProps> = ({ appContext }) => {
         try {
             const rawPhone = selectedClientForAnnouncement.phone;
             let phoneId = rawPhone.replace(/\D/g, '');
-            
-            // Ajuste para números estrangeiros: Adiciona 55 apenas se for padrão BR (10 ou 11 dígitos) e não tiver "+" no início
             if (!rawPhone.trim().startsWith("+") && (phoneId.length === 10 || phoneId.length === 11)) {
                 phoneId = "55" + phoneId;
             }
-            
             await sendAdminChatMessage(phoneId, announcementMessage);
             showNotification('Aviso enviado com sucesso via API oficial!', 'success');
             setIsAnnouncementModalOpen(false);
@@ -215,7 +213,7 @@ const ClientsView: React.FC<ClientsViewProps> = ({ appContext }) => {
                                 <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{client.phone}</p>
                             </CardContent>
                              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button size="sm" variant="light" className="shadow-md !p-2" onClick={(e) => handleOpenAnnouncement(e, client)} title="Enviar Aviso via API">
+                                <Button size="sm" variant="secondary" className="shadow-md !p-2" onClick={(e) => handleOpenAnnouncement(e, client)} title="Enviar Aviso via API">
                                     <SparklesIcon className="w-5 h-5 text-purple-600" />
                                 </Button>
                             </div>
@@ -362,6 +360,12 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
                     </div>
                 </fieldset>
                 <fieldset className="border p-4 rounded-md dark:border-gray-600">
+                    <legend className="px-2 font-semibold text-blue-600">Status de Uso</legend>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                        <Select label="Status de Uso" name="poolStatus.uso" value={clientData.poolStatus?.uso || 'Livre para uso'} onChange={handleChange} options={[{value: 'Livre para uso', label: 'Livre para uso'}, {value: 'Em tratamento', label: 'Em tratamento'}]} />
+                    </div>
+                </fieldset>
+                <fieldset className="border p-4 rounded-md dark:border-gray-600">
                     <legend className="px-2 font-semibold">Endereço</legend>
                     <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 mt-2">
                         <Input containerClassName="sm:col-span-4" label="Rua" name="address.street" value={clientData.address?.street || ''} onChange={handleChange} />
@@ -374,6 +378,14 @@ const ClientEditModal: React.FC<ClientEditModalProps> = (props) => {
                 </fieldset>
                 <fieldset className="border p-4 rounded-md dark:border-gray-600">
                     <legend className="px-2 font-semibold">Faturamento e Cobrança</legend>
+                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-lg">
+                        <ToggleSwitch 
+                            label="Desativar Lembretes de Cobrança" 
+                            enabled={!!clientData.disableReminders} 
+                            onChange={(enabled) => setClientData(prev => ({ ...prev, disableReminders: enabled }))} 
+                        />
+                        <p className="text-[10px] text-red-600 dark:text-red-400 mt-1">Marque esta opção para clientes que não gostam de receber cobranças automáticas.</p>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                          <Input label="Nome do Destinatário (Cobrança)" name="recipientName" value={clientData.recipientName || ''} onChange={handleChange} placeholder="Nome para a variável {DESTINATARIO}" />
                          <Select label="Banco Associado" name="bankId" value={clientData.bankId || ''} onChange={handleChange} options={[{ value: '', label: 'Nenhum' }, ...banks.map(b => ({ value: b.id, label: b.name }))]} />

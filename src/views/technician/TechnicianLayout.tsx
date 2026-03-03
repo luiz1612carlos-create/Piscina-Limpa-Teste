@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import { AuthContextType, AppContextType } from '../../types';
 import { MoonIcon, SunIcon, LogoutIcon } from '../../constants';
@@ -33,7 +31,7 @@ const TechnicianLayout: React.FC<TechnicianLayoutProps> = ({ authContext, appCon
                                 alt={appContext.settings.companyName} 
                                 className="max-w-full max-h-full"
                                 style={{ 
-                                    objectFit: appContext.settings?.logoObjectFit || 'contain',
+                                    objectFit: (appContext.settings?.logoObjectFit as React.CSSProperties['objectFit']) || 'contain',
                                     transform: `scale(${logoTransforms?.scale || 1}) rotate(${logoTransforms?.rotate || 0}deg)`,
                                     filter: logoFilter
                                 }} 
